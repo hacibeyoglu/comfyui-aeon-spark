@@ -17,7 +17,7 @@ docker pull ghcr.io/aeon-7/comfyui-aeon-spark:latest
 | `bf16-flux2-ltx2.3` | semantic name pinned to this release |
 | `cu130-sm121a` | hardware-pin name; for sticking to a known-good build |
 
-[**▶ QuickStart**](#quickstart) · [**Why DGX Spark**](#why-this-image-exists--target-system) · [**Hardware Compatibility**](#hardware-compatibility-matrix) · [**What's Bundled**](#whats-bundled) · [**Optimization Story**](#optimization-story)
+[**▶ QuickStart**](#quickstart) · [**Why DGX Spark**](#why-this-image-exists--target-system) · [**Hardware Compatibility**](#hardware-compatibility-matrix) · [**What's Bundled**](#whats-bundled) · [**Optimization Story**](#optimization-story) · [**🤖 AI-Agent deployment guide → AGENTS.md**](AGENTS.md)
 
 ---
 
@@ -395,9 +395,14 @@ docker compose down && docker start vllm-aeon-ultimate-v2   # back to vLLM
 ├── workflows/           # 8 .json files baked into the image
 ├── .env.example         # HF_TOKEN + tuning flags
 ├── README.md            # this file
+├── AGENTS.md            # deployment guide for AI agents (Claude, Copilot, etc.)
 ├── WRITEUP.md           # extended writeup (more detail than README)
 └── QUICKSTART.md        # 3-command run + troubleshooting
 ```
+
+## Deploying via an AI agent
+
+If you're handing this to an AI agent (Claude, Copilot, Cursor, etc.) to deploy on a Spark you have SSH access to, point it at [`AGENTS.md`](AGENTS.md). It's structured top-to-bottom with pre-flight checks, single-block deployment commands, post-deploy validation, exact-fix matrices for common failures, hard "do not" guardrails, and a standard report-back template.
 
 ## License
 
