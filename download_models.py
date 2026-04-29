@@ -29,9 +29,10 @@ os.environ.setdefault("HF_HUB_ENABLE_HF_TRANSFER", "1")
 os.environ.setdefault("HF_HUB_DOWNLOAD_TIMEOUT", "180")
 
 
-# Each entry: (repo_id, repo_filepath, local_subdir, friendly_name)
-# local_subdir is relative to <workspace>/models/
-PRIMARY_FILES: list[tuple[str, str, str, str]] = [
+# Each entry: (repo_id, repo_filepath, local_subdir, friendly_name [, local_filename])
+# - local_subdir is relative to <workspace>/models/  (may contain '/' for nested dirs)
+# - local_filename, if present, renames the file at the destination
+PRIMARY_FILES: list[tuple] = [
     # ---------- Flux 2 Dev (Comfy-Org pre-split, ComfyUI-native) ----------
     (
         "Comfy-Org/flux2-dev",
@@ -174,6 +175,53 @@ PRIMARY_FILES: list[tuple[str, str, str, str]] = [
         "Flux 2 Turbo LoRA (canonical filename — alternate to Flux2TurboComfyv2.safetensors)",
     ),
 
+    # ---------- Files referenced by Lightricks's distilled workflows that the
+    #            earlier download set missed (issue caught during workflow validation) ----------
+    (
+        "Lightricks/LTX-2.3",
+        "ltx-2.3-22b-dev.safetensors",
+        "checkpoints",
+        "LTX 2.3 22B Dev BF16 full checkpoint (46GB — Lightricks single-stage distilled workflow)",
+    ),
+    (
+        "Lightricks/LTX-2.3",
+        "ltx-2.3-22b-distilled-lora-384-1.1.safetensors",
+        "loras/ltxv/ltx2",
+        "LTX 2.3 distilled LoRA-384 v1.1 (7.6GB — nested under loras/ltxv/ltx2/ as workflow expects)",
+    ),
+    (
+        "Lightricks/LTX-2.3-fp8",
+        "ltx-2.3-22b-distilled-fp8.safetensors",
+        "checkpoints",
+        "LTX 2.3 22B distilled FP8 checkpoint (29GB — flf2v workflow)",
+    ),
+    (
+        "AviadDahan/LTX-2.3-ID-LoRA-TalkVid-3K",
+        "lora_weights.safetensors",
+        "loras",
+        "LTX 2.3 ID LoRA TalkVid 3K (1.2GB — id_lora workflow)",
+        "ltx-2.3-id-lora-talkvid-3k.safetensors",
+    ),
+    (
+        "Comfy-Org/ltx-2",
+        "split_files/text_encoders/gemma_3_12B_it.safetensors",
+        "text_encoders",
+        "Gemma-3 12B IT under the comfy_-prefixed name Lightricks's distilled workflow expects (BF16, 24.4GB)",
+        "comfy_gemma_3_12B_it.safetensors",
+    ),
+    (
+        "black-forest-labs/FLUX.2-klein-base-9b-fp8",
+        "flux-2-klein-base-9b-fp8.safetensors",
+        "diffusion_models",
+        "Flux 2 Klein base 9B FP8 (9.5GB — Klein 9B workflow)",
+    ),
+    (
+        "Comfy-Org/vae-text-encorder-for-flux-klein-9b",
+        "split_files/text_encoders/qwen_3_8b_fp8mixed.safetensors",
+        "text_encoders",
+        "Qwen 3 8B FP8 mixed text encoder for Flux 2 Klein 9B (8.7GB)",
+    ),
+
     # ---------- ACE-Step v1.5 audio model (powers the Ancient_Sufi workflow) ----------
     (
         "Comfy-Org/ace_step_1.5_ComfyUI_files",
@@ -233,13 +281,24 @@ def _retry(callable_, *, attempts: int = 4, base_delay: float = 5.0):
     raise last  # type: ignore[misc]
 
 
-def fetch_file(repo_id: str, repo_path: str, dst_dir: Path, friendly: str, token: str | None) -> bool:
-    final_path = dst_dir / Path(repo_path).name
+def fetch_file(repo_id: str, repo_path: str, dst_dir: Path, friendly: str,
+               token: str | None, local_filename: str | None = None) -> bool:
+    """Download a single file from HF.
+
+    Args:
+        repo_id, repo_path: where the file lives on HF
+        dst_dir: target directory (already includes nested subdirs from the entry's local_subdir)
+        friendly: human label for logs
+        local_filename: if provided, the file is saved under this name (renames the HF basename)
+    """
+    target_name = local_filename or Path(repo_path).name
+    final_path = dst_dir / target_name
     if final_path.exists() and final_path.stat().st_size > 0:
         log.info("✓ already present: %s", friendly)
         return True
 
-    log.info("⤓ %s  (%s :: %s)", friendly, repo_id, repo_path)
+    log.info("⤓ %s  (%s :: %s%s)", friendly, repo_id, repo_path,
+             f"  → renamed to {target_name}" if local_filename else "")
     dst_dir.mkdir(parents=True, exist_ok=True)
     try:
         out = _retry(lambda: hf_hub_download(
@@ -248,15 +307,13 @@ def fetch_file(repo_id: str, repo_path: str, dst_dir: Path, friendly: str, token
             local_dir=str(dst_dir),
             token=token,
         ))
-        # If hf_hub_download placed it under a nested folder matching repo_path,
-        # flatten it down to dst_dir/<basename>.
         out_path = Path(out)
+        # Flatten any HF-imposed subfolder (split_files/...) and apply rename
         if out_path != final_path and out_path.exists():
             final_path.parent.mkdir(parents=True, exist_ok=True)
             try:
                 out_path.replace(final_path)
             except OSError:
-                # cross-fs — copy then unlink
                 import shutil
                 shutil.copy2(out_path, final_path)
                 out_path.unlink(missing_ok=True)
@@ -313,8 +370,14 @@ def main() -> int:
     failures = 0
 
     # 1. Primary file-by-file downloads
-    for repo_id, repo_path, subdir, friendly in PRIMARY_FILES:
-        ok = fetch_file(repo_id, repo_path, models / subdir, friendly, token)
+    for entry in PRIMARY_FILES:
+        # Backwards compatible: 4-tuple (canonical) or 5-tuple (with rename)
+        if len(entry) == 5:
+            repo_id, repo_path, subdir, friendly, local_filename = entry
+        else:
+            repo_id, repo_path, subdir, friendly = entry
+            local_filename = None
+        ok = fetch_file(repo_id, repo_path, models / subdir, friendly, token, local_filename)
         successes += int(ok)
         failures += int(not ok)
 

@@ -1,0 +1,32 @@
+# syntax=docker/dockerfile:1.7
+# =============================================================================
+# Full bake — extends the slim image with all 23 model files needed by the 8
+# pre-seeded workflows pre-staged at /opt/baked_models/.  The entrypoint adds
+# an extra_model_paths.yaml entry so ComfyUI's loaders see them on first start.
+#
+# Pull this tag and you skip the ~50 min first-start download.
+# =============================================================================
+
+FROM ghcr.io/aeon-7/comfyui-aeon-spark:bf16-flux2-ltx2.3 AS full
+
+# Each subdir is its own layer for cache locality and addressability.
+# Total payload ~243 GB; biggest layer is diffusion_models at ~46 GB.
+COPY baked_models/diffusion_models       /opt/baked_models/diffusion_models/
+COPY baked_models/checkpoints            /opt/baked_models/checkpoints/
+COPY baked_models/text_encoders          /opt/baked_models/text_encoders/
+COPY baked_models/vae                    /opt/baked_models/vae/
+COPY baked_models/loras                  /opt/baked_models/loras/
+COPY baked_models/latent_upscale_models  /opt/baked_models/latent_upscale_models/
+
+# Tell the entrypoint to wire baked models into ComfyUI's loaders
+ENV BAKED_MODELS=/opt/baked_models
+
+LABEL org.opencontainers.image.title="ComfyUI · AEON DGX Spark · Flux 2 + LTX 2.3 + ACE-Step (BF16, FULL — models pre-baked)" \
+      org.opencontainers.image.description="Fully self-contained variant of comfyui-aeon-spark with ~243 GB of model weights pre-baked into the image. No first-start download. Works offline / air-gapped after pull. ComfyUI optimized for DGX Spark (GB10 / sm_121a) with CUDA 13 + SageAttention v3 (compiled for sm_121a) + NVFP4 (CUTLASS) hardware path." \
+      org.opencontainers.image.source="https://github.com/AEON-7/comfyui-aeon-spark" \
+      org.opencontainers.image.documentation="https://github.com/AEON-7/comfyui-aeon-spark/blob/main/README.md" \
+      org.opencontainers.image.version="bf16-flux2-ltx2.3-full" \
+      io.aeon.dgx-spark.bake="true" \
+      io.aeon.dgx-spark.baked-size-gb="243" \
+      io.aeon.dgx-spark.baked-files="22" \
+      io.aeon.dgx-spark.notes="Klein-9B base FP8 omitted (BFL gated repo); accept license at huggingface.co/black-forest-labs/FLUX.2-klein-base-9b-fp8 then download manually if needed for workflow 08."

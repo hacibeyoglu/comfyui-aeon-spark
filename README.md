@@ -8,14 +8,18 @@
 > sm_121a + NVFP4 (CUTLASS) hardware GEMMs.
 
 ```
-docker pull ghcr.io/aeon-7/comfyui-aeon-spark:latest
+docker pull ghcr.io/aeon-7/comfyui-aeon-spark:latest          # slim — recommended
+docker pull ghcr.io/aeon-7/comfyui-aeon-spark:full            # everything baked, no first-start downloads
 ```
 
-| Tag | Use when |
-| --- | --- |
-| `latest` | always-current, tracks the most recent release |
-| `bf16-flux2-ltx2.3` | semantic name pinned to this release |
-| `cu130-sm121a` | hardware-pin name; for sticking to a known-good build |
+### Tag matrix
+
+| Tag | Image size | First-start time | When to use |
+| --- | --- | --- | --- |
+| `latest` / `slim` / `bf16-flux2-ltx2.3` / `cu130-sm121a` | **17 GB** | ~50 min (downloads ~285 GB on first start) | normal use — fastest pull, easy to re-tag/customize |
+| `full` / `bf16-flux2-ltx2.3-full` | **277 GB** | **~10 sec** (every model pre-baked) | air-gapped Spark, no HF account, instant boot, redistribute as a sealed unit |
+
+The `full` tag has 22 model files (~243 GB) pre-staged at `/opt/baked_models/` inside the image, exposed to ComfyUI via an auto-generated `extra_model_paths.yaml`. The slim variant downloads the same files into the workspace volume on first start. Either way the running ComfyUI sees the same loader options.
 
 [**▶ QuickStart**](#quickstart) · [**Why DGX Spark**](#why-this-image-exists--target-system) · [**Hardware Compatibility**](#hardware-compatibility-matrix) · [**What's Bundled**](#whats-bundled) · [**Optimization Story**](#optimization-story) · [**🤖 AI-Agent deployment guide → AGENTS.md**](AGENTS.md)
 

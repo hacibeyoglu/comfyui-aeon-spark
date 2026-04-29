@@ -5,3 +5,5 @@ workspace
 .gitignore
 __pycache__
 *.pyc
+# baked_models/ is intentionally NOT excluded — Dockerfile.full needs it.
+# The slim Dockerfile doesn't reference it, so BuildKit just transfers metadata.

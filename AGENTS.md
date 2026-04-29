@@ -9,11 +9,22 @@
 ## 0 · Identity
 
 **Repository:** `AEON-7/comfyui-aeon-spark`
-**Image:** `ghcr.io/aeon-7/comfyui-aeon-spark:latest`
+**Image:** `ghcr.io/aeon-7/comfyui-aeon-spark:latest` (default — slim, 17 GB)
+**Alternate:** `ghcr.io/aeon-7/comfyui-aeon-spark:full` (277 GB — every model pre-baked, no first-start download)
 **Purpose:** ComfyUI workstation pre-loaded with Flux 2 Dev, LTX 2.3 22B, and ACE-Step v1.5 XL Turbo, optimized for DGX Spark (GB10 / Blackwell / **sm_121a**).
 **You are deploying onto:** a single DGX Spark host with Docker installed.
-**Approximate disk needed:** **350 GB** (16 GB image + 285 GB models + headroom).
-**Approximate time to first generation:** **~50 minutes** (model download bound, not compute bound).
+**Approximate disk needed:**
+- **Slim** (default): **350 GB** (17 GB image + 285 GB workspace + headroom).
+- **Full** (pre-baked): **300 GB** (277 GB image + ~20 GB workspace headroom).
+
+**Approximate time to first generation:**
+- **Slim**: **~50 minutes** (image pull ~5 min + model download ~45 min — bound by HF bandwidth).
+- **Full**: **pull-time + ~10 sec** (no downloads on first start; pull time depends on your connection and image size).
+
+Pick **slim** for normal deployments. Pick **full** when:
+- The Spark is air-gapped or has restricted egress.
+- You don't have / don't want to provide an HF token.
+- You want a sealed, reproducible deployment that's identical on every host (every model byte pinned to the image digest).
 
 ---
 
@@ -73,10 +84,16 @@ Plug the user's values into the variables below and run as a single block.
 
 ```bash
 # ── parameters ──────────────────────────────────────────────────────────────
+IMAGE_TAG="${IMAGE_TAG:-latest}"             # `latest` (slim) or `full` (pre-baked)
 WORKSPACE="${WORKSPACE:-$HOME/comfyui-spark}"
 COMFYUI_PORT="${COMFYUI_PORT:-8188}"
-HF_TOKEN="${HF_TOKEN:?must be set; ask user for hf_... read token}"
 SKIP_ABLITERATED="${SKIP_ABLITERATED:-0}"   # set to 1 to skip ~70 GB
+# HF_TOKEN is required for `latest`/slim (downloads gated repos at runtime).
+# It is OPTIONAL for `full` (everything pre-baked).  Pass empty string if `full`.
+HF_TOKEN="${HF_TOKEN:-}"
+if [ "$IMAGE_TAG" = "latest" ] || [ "$IMAGE_TAG" = "slim" ] || [ "$IMAGE_TAG" = "bf16-flux2-ltx2.3" ] || [ "$IMAGE_TAG" = "cu130-sm121a" ]; then
+    : "${HF_TOKEN:?must be set when using slim tag; ask user for hf_... read token}"
+fi
 # ────────────────────────────────────────────────────────────────────────────
 
 mkdir -p "$WORKSPACE/workspace"
@@ -94,7 +111,7 @@ chmod 600 .env
 cat > docker-compose.yml <<'YAML'
 services:
   comfyui:
-    image: ghcr.io/aeon-7/comfyui-aeon-spark:latest
+    image: ghcr.io/aeon-7/comfyui-aeon-spark:${IMAGE_TAG:-latest}
     container_name: comfyui-spark
     runtime: nvidia
     deploy:

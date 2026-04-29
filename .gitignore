@@ -5,3 +5,4 @@ __pycache__/
 *.pyc
 workflows.old/
 workflows.new/
+baked_models/
