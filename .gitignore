@@ -1,0 +1,7 @@
+workspace/
+.env
+*.log
+__pycache__/
+*.pyc
+workflows.old/
+workflows.new/

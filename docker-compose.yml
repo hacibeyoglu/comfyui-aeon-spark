@@ -1,0 +1,91 @@
+# =============================================================================
+# ComfyUI for DGX Spark — docker-compose
+# =============================================================================
+services:
+  comfyui:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        BUILD_JOBS: "${BUILD_JOBS:-20}"
+    image: comfyui-spark:cu130
+    container_name: comfyui-spark
+    hostname: comfyui-spark
+
+    # GPU access (full unified-memory fabric on DGX Spark)
+    runtime: nvidia
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+    # Web UI port (override with COMFYUI_PORT)
+    ports:
+      - "${COMFYUI_PORT:-8188}:8188"
+
+    environment:
+      # ComfyUI flags — optimized for sm_121a with SageAttention + bf16
+      COMFYUI_PORT: "8188"
+      COMFYUI_FLAGS: >-
+        --listen 0.0.0.0
+        --port 8188
+        --use-sage-attention
+        --bf16-unet --bf16-vae --bf16-text-enc
+        --disable-pinned-memory
+        --reserve-vram 2.0
+        --preview-method auto
+        --enable-cors-header
+        --enable-manager
+
+      # Compile path is broken on sm_121a today — keep it off
+      TORCH_COMPILE_DISABLE: "1"
+      TORCHDYNAMO_DISABLE: "1"
+
+      # Grace-Blackwell unified-memory tuning
+      CUDA_DEVICE_MAX_CONNECTIONS: "1"
+      CUDA_DEVICE_MAX_COPY_CONNECTIONS: "4"
+      CUDA_MODULE_LOADING: "EAGER"
+      CUDA_MANAGED_FORCE_DEVICE_ALLOC: "1"
+      CUBLAS_WORKSPACE_CONFIG: ":0:0"
+      PYTORCH_ALLOC_CONF: "expandable_segments:True"
+      OMP_NUM_THREADS: "20"
+      MKL_NUM_THREADS: "20"
+
+      # NVIDIA toolkit
+      NVIDIA_VISIBLE_DEVICES: "all"
+      NVIDIA_DRIVER_CAPABILITIES: "compute,utility,video"
+
+      # HuggingFace download tuning
+      HF_HUB_ENABLE_HF_TRANSFER: "1"
+      HF_HUB_DOWNLOAD_TIMEOUT: "180"
+      HF_TOKEN: "${HF_TOKEN:-}"
+
+      # Toggle the auto-download flow on first start
+      SKIP_MODEL_DOWNLOAD: "${SKIP_MODEL_DOWNLOAD:-0}"
+      SKIP_ABLITERATED: "${SKIP_ABLITERATED:-0}"
+      FORCE_MODEL_DOWNLOAD: "${FORCE_MODEL_DOWNLOAD:-0}"
+
+    # Single persistent volume for the entire ComfyUI workspace.
+    # This is the local source of truth — models, custom_nodes, output, input,
+    # user (settings + workflows), temp all live here so nothing is lost on
+    # container rebuild/recreate.
+    volumes:
+      - ./workspace:/workspace/ComfyUI
+
+    shm_size: "32gb"
+    ipc: host
+    ulimits:
+      memlock: -1
+      stack: 67108864
+
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8188/system_stats >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      start_period: 600s
+      retries: 5
+
+    restart: unless-stopped
