@@ -186,6 +186,12 @@ RUN mkdir -p ${BUNDLED_NODES} && cd ${BUNDLED_NODES} && \
     git clone --depth=1 https://github.com/stavsap/comfyui-ollama.git ComfyUI-Ollama && \
     git clone --depth=1 https://github.com/Jonseed/ComfyUI-Detail-Daemon.git
 
+# In-tree extension pack: routes the new ComfyUI 0.20+ Workflow-Overview
+# "Missing Models -> Download all/Download" buttons through the server-side
+# Manager install API so the file lands in the user's workspace volume,
+# not in their browser. Critical for remote-accessed Sparks.
+COPY aeon-server-side-downloads ${BUNDLED_NODES}/aeon-server-side-downloads
+
 # Install requirements.txt from each bundled node (best-effort)
 RUN --mount=type=cache,id=pip-cache,target=/root/.cache/pip \
     for d in ${BUNDLED_NODES}/*/; do \
