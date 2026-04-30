@@ -16,7 +16,8 @@ DEFAULT_FLAGS="--listen 0.0.0.0 --port ${PORT} \
   --reserve-vram 2.0 \
   --preview-method auto \
   --enable-cors-header \
-  --enable-manager"
+  --enable-manager \
+  --enable-assets"
 COMFYUI_FLAGS="${COMFYUI_FLAGS:-${DEFAULT_FLAGS}}"
 
 log() { printf '\033[1;36m[entrypoint]\033[0m %s\n' "$*"; }

@@ -47,6 +47,7 @@ uname -m
 
 # Docker must support the nvidia runtime
 docker info 2>&1 | grep -E "Runtimes:.*nvidia" || echo "MISSING_NVIDIA_RUNTIME"
+docker compose version 2>&1 | grep -q "Docker Compose" || echo "MISSING_DOCKER_COMPOSE"
 
 # Must have ≥ 350 GB free on the chosen host path (default below: $HOME)
 df -BG --output=avail "$HOME" | tail -1
@@ -152,15 +153,17 @@ docker compose logs -f comfyui
 
 **Expected log signals during first start, in order:**
 
-1. `[entrypoint] ComfyUI for DGX Spark (sm_121a, CUDA 13)`
-2. `[entrypoint] Sage : installed @ /opt/venv/...`
-3. `[entrypoint] Manager: pip pkg present @ /opt/venv/...`
-4. `[entrypoint] Seeding workflow: 01_flux2_text_to_image.json` (×8)
-5. `[entrypoint] Downloading models — this can take a while on first start...`
-6. `[downloader] ⤓` then `[downloader] ✓ done:` lines (×24 named files, then ×2 snapshots)
-7. `[downloader] download summary: 28 ok, 0 failed`
-8. `[entrypoint] Launching ComfyUI on port 8188`
-9. `Starting server` / `To see the GUI go to: http://0.0.0.0:8188`
+1. `comfyui-ollama` becomes healthy first (auto-pulls `gemma3:4b` ~3 GB)
+2. `[entrypoint] ComfyUI for DGX Spark (sm_121a, CUDA 13)`
+3. `[entrypoint] Sage : installed @ /opt/venv/...`
+4. `[entrypoint] Manager: pip pkg present @ /opt/venv/...`
+5. `[entrypoint] Seeding workflow: 01_flux2_text_to_image.json` (×8)
+6. `[entrypoint] Downloading models — this can take a while on first start...`
+7. `[downloader] ⤓` then `[downloader] ✓ done:` lines (×33 named files, then ×2 snapshots)
+8. `[downloader] download summary: 35 ok, [N] failed` (1 failure expected if BFL Klein license not accepted)
+9. `[entrypoint] Launching ComfyUI on port 8188`
+10. `Background asset scan initiated for models, input, output` (server-side missing-model detection enabled)
+11. `Starting server` / `To see the GUI go to: http://0.0.0.0:8188`
 
 If the user wants the agent to wait without holding their terminal, use a polling background job rather than `docker compose logs -f`:
 

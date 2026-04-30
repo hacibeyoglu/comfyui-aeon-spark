@@ -222,6 +222,24 @@ behavior across NVIDIA platforms:
 | GGUF runtime | `gguf` >= 0.13 + sentencepiece + protobuf |
 | **Total backend nodes registered** | **~1725** (Comfy core + 14 bundled custom-node packs) |
 
+### Bundled services
+
+The compose stack ships **two services**:
+
+- **`comfyui`** — main UI on `:8188`
+- **`ollama`** — LLM sidecar, auto-pulls `gemma3:4b` (~3 GB, swap via `OLLAMA_PRELOAD_MODEL`). Used by workflow 09 (AceStep audio) for prompt expansion. Reachable from `comfyui` as `http://ollama:11434`.
+
+`ollama:11434` isn't exposed to the host by default — it's an internal-only service. If you want to use it from other clients on your LAN, add `ports: ["11434:11434"]` to the ollama service in `docker-compose.yml`.
+
+### Server-side model downloads (not browser downloads!)
+
+`--enable-assets` and `--enable-manager` are on by default. When you load a workflow that's missing a model, ComfyUI shows an "install" button — clicking it triggers a **server-side** download via `huggingface_hub` (or aria2 if `COMFYUI_MANAGER_ARIA2_SERVER` is set). The file lands in your `./workspace/models/<directory>/` on the **server's** disk, never on the client browser. This is critical for remote-accessed Sparks where the browser is on a different machine.
+
+Sources of model URLs (read in this order):
+1. `properties.models[]` arrays on workflow loader nodes (canonical Comfy templates have these wired)
+2. `download_models.py` runs at first start to pre-fetch the bundled set
+3. ComfyUI Manager's catalog (browse → install for any community model)
+
 ### Bundled ComfyUI custom node packs
 
 | Pack | Why |

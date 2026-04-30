@@ -1,7 +1,52 @@
 # =============================================================================
 # ComfyUI for DGX Spark — docker-compose
+#
+# Two services:
+#  - comfyui : the main UI + diffusion stack
+#  - ollama  : LLM prompt-expansion service used by workflow 09 (AceStep audio).
+#              On first boot it auto-pulls `gemma3:4b` (~3 GB) so the workflow
+#              works out of the box. Override OLLAMA_PRELOAD_MODEL to swap.
 # =============================================================================
 services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: comfyui-ollama
+    runtime: nvidia
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    environment:
+      OLLAMA_HOST: "0.0.0.0:11434"
+      OLLAMA_KEEP_ALIVE: "24h"
+      OLLAMA_NUM_PARALLEL: "1"
+      NVIDIA_VISIBLE_DEVICES: "all"
+      NVIDIA_DRIVER_CAPABILITIES: "compute,utility"
+    volumes:
+      - ./workspace/.ollama:/root/.ollama
+    # Pre-pull the LLM workflow 09 expects on first start.  If the model
+    # already exists in the volume it's a no-op.
+    entrypoint: >-
+      /bin/sh -c '
+      /bin/ollama serve &
+      sleep 5;
+      MODEL="${OLLAMA_PRELOAD_MODEL:-gemma3:4b}";
+      echo "[ollama-init] ensuring model $$MODEL is present";
+      /bin/ollama pull "$$MODEL" || true;
+      echo "[ollama-init] ready";
+      wait
+      '
+    healthcheck:
+      test: ["CMD", "/bin/ollama", "list"]
+      interval: 30s
+      timeout: 10s
+      start_period: 120s
+      retries: 5
+    restart: unless-stopped
+
   comfyui:
     build:
       context: .
@@ -39,6 +84,7 @@ services:
         --preview-method auto
         --enable-cors-header
         --enable-manager
+        --enable-assets
 
       # Compile path is broken on sm_121a today — keep it off
       TORCH_COMPILE_DISABLE: "1"
@@ -87,5 +133,9 @@ services:
       timeout: 10s
       start_period: 600s
       retries: 5
+
+    depends_on:
+      ollama:
+        condition: service_healthy
 
     restart: unless-stopped

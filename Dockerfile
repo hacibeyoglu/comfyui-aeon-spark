@@ -144,17 +144,26 @@ RUN --mount=type=cache,id=pip-cache,target=/root/.cache/pip \
     pip install -r requirements.txt
 
 # Useful comfy ecosystem extras (loaded but not active until referenced)
+# Required deps for custom nodes — fail-fast so install issues are caught
 RUN --mount=type=cache,id=pip-cache,target=/root/.cache/pip \
     pip install \
       comfy-cli \
-      onnxruntime-gpu \
       ftfy regex \
       omegaconf timm einops_exts \
-      av decord \
+      av \
       scikit-image scikit-learn \
       matplotlib pandas \
       lmdb \
-      "xformers; platform_machine != 'aarch64'" || true
+      pynvml nvidia-ml-py \
+      ollama
+
+# Optional deps — best-effort install (ARM64 wheels may be missing for some)
+RUN --mount=type=cache,id=pip-cache,target=/root/.cache/pip \
+    pip install eva-decord || pip install decord || true
+RUN --mount=type=cache,id=pip-cache,target=/root/.cache/pip \
+    pip install onnxruntime-gpu || pip install onnxruntime || true
+RUN --mount=type=cache,id=pip-cache,target=/root/.cache/pip \
+    pip install "xformers; platform_machine != 'aarch64'" || true
 
 # -----------------------------------------------------------------------------
 # Pre-bundle essential custom nodes (these will be present even on first start;
