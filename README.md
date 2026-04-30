@@ -14,73 +14,54 @@ docker pull ghcr.io/aeon-7/comfyui-aeon-spark:slim            # no auto-download
 
 ### Tag matrix
 
-| Tag | Image size | What's inside | License posture |
+| Tag | Image size | What's inside | When to use |
 | --- | --- | --- | --- |
-| **`latest`** / `full` / `bf16-flux2-ltx2.3` / `cu130-sm121a` | **17 GB** | code + auto-downloader; on first start it pulls ~285 GB of weights into your workspace volume **using your HF_TOKEN** | ✅ you accept each model's license at HuggingFace via your account; we orchestrate the download |
-| **`slim`** / `base` | **17 GB** | code only — no auto-download, no embedded weights | ✅ totally clean; you pick every model via the in-UI Manager / asset browser |
-| **`bake`** *(local-build only — see `Dockerfile.full`)* | **277 GB** | code + 22 model files baked into image layers | ⚠️ **not published**: redistributing weights would conflict with FLUX.2 [dev] non-commercial, Mistral MRL, Gemma terms, BFL gating. Build for personal use only. |
+| **`latest`** / `full` / `bf16-flux2-ltx2.3` / `cu130-sm121a` | **17 GB** | code + downloader; on first start the downloader pulls **~285 GB of weights** into your workspace volume using **your HF_TOKEN** | default — you have an HF account, you just want it to work |
+| **`slim`** / `base` | **17 GB** | code only, **no auto-download** | when you want to pick every model individually via the in-UI Manager, or when you want full control / fine-grained license consent |
 
-#### Why three variants?
+Both variants ship the same code, custom nodes, and workflows. The difference is one runs the bundled downloader on first start; the other waits for you to install models via the UI.
 
-Most published "ready-to-go" Stable Diffusion images bake weights and quietly violate every model's license. We do not.
+**No image variant ever ships pre-embedded weights.** That keeps every model's license cleanly the responsibility of the user pulling the file from HuggingFace under their own account. We never act as a redistributor of model weights.
 
-- **`:full`** is what you want when you have an HF account and just want it to work. The image ships a downloader script that calls HF Hub with **your** token. You're the one accepting each license at the HF model page; we never act as a redistributor.
-- **`:slim`** is for when license compliance must be airtight, when you want to swap models freely, or when your Spark has restricted egress. Click "Install Missing Models" in the UI to pull each model individually under your HF account, with full per-model license consent.
-- **`:bake`** (locally-buildable, never pushed) embeds weights for true offline use. Don't redistribute the resulting image — the licenses on the bundled models do not allow it.
+### License notes (read before commercial use)
 
-Read each model's license before commercial use:
-- [FLUX.2-dev](https://huggingface.co/black-forest-labs/FLUX.2-dev/blob/main/LICENSE.md) — non-commercial
-- [FLUX.2-klein-base-9b-fp8](https://huggingface.co/black-forest-labs/FLUX.2-klein-base-9b-fp8) — gated, accept on HF before pulling
-- [Mistral-Small-3](https://mistral.ai/terms#research-license) — research-use license
-- [Gemma-3](https://ai.google.dev/gemma/terms) — Gemma Terms of Use
-- [LTX 2.3](https://huggingface.co/Lightricks/LTX-2.3/blob/main/LICENSE) — Lightricks Open Weights
-- [ACE-Step v1.5](https://huggingface.co/ACE-Step/ACE-Step-v1) — see model card
-
-#### Building `:full` locally
-
-```bash
-git clone https://github.com/AEON-7/comfyui-aeon-spark.git
-cd comfyui-aeon-spark
-
-# 1. Pull the slim base + run it once with HF_TOKEN to download all 22 model files
-#    (~285 GB into ./workspace/models/, takes ~50 min on first start)
-cp .env.example .env  # edit HF_TOKEN
-docker compose up -d
-# wait for "download summary: 28 ok, 0 failed" then ctrl-c the logs
-
-# 2. Stage the 22 baked files via hardlinks (instant, 0 disk cost)
-docker run --rm \
-  -v $PWD:/data \
-  alpine:latest sh -c '
-    rm -rf /data/baked_models && mkdir -p /data/baked_models
-    cd /data
-    for f in $(grep -E "^[a-z_]+/[a-z0-9._-]+\.safetensors$" Dockerfile.full | awk "{print \$2}" | sort -u); do
-      src="workspace/models/${f#baked_models/}"
-      dst="$f"
-      mkdir -p "$(dirname "$dst")"
-      [ -f "$src" ] && ln -f "$src" "$dst"
-    done
-    chown -R 1000:1000 /data/baked_models
-  '
-
-# 3. Build (uses BuildKit's per-file COPY, max layer size 46 GB)
-DOCKER_BUILDKIT=1 docker buildx build -f Dockerfile.full \
-  -t ghcr.io/<your-namespace>/comfyui-aeon-spark:full --load .
-
-# 4. Push to your registry
-docker push ghcr.io/<your-namespace>/comfyui-aeon-spark:full
-```
-
-> **GHCR push tip:** large-image pushes can hang silently if the docker daemon
-> gets into a bad state. If you see no progress after a few minutes,
-> `sudo systemctl restart docker` and retry. Per-file layers (already configured
-> in `Dockerfile.full`) help — keep individual files ≤ 50 GB.
+| Model | Where it lives | License | Notes |
+| --- | --- | --- | --- |
+| FLUX.2-dev | [black-forest-labs/FLUX.2-dev](https://huggingface.co/black-forest-labs/FLUX.2-dev) | [FLUX.2 [dev] Non-Commercial](https://huggingface.co/black-forest-labs/FLUX.2-dev/blob/main/LICENSE.md) | research / non-commercial only by default |
+| FLUX.2-klein-base-9b-fp8 | [black-forest-labs/FLUX.2-klein-base-9b-fp8](https://huggingface.co/black-forest-labs/FLUX.2-klein-base-9b-fp8) | BFL Klein, **gated** | must "Agree and access" on HF before HF_TOKEN can download it |
+| Mistral-Small-3 (Flux 2 text encoder) | [Comfy-Org/flux2-dev](https://huggingface.co/Comfy-Org/flux2-dev) | [Mistral Research License](https://mistral.ai/terms#research-license) | research use |
+| Gemma-3 (LTX 2.3 text encoder) | [Comfy-Org/ltx-2](https://huggingface.co/Comfy-Org/ltx-2) | [Gemma Terms of Use](https://ai.google.dev/gemma/terms) | attribution + restrictions |
+| LTX 2.3 | [Lightricks/LTX-2.3](https://huggingface.co/Lightricks/LTX-2.3) | [Lightricks Open Weights](https://huggingface.co/Lightricks/LTX-2.3/blob/main/LICENSE) | mostly permissive |
+| ACE-Step v1.5 | [Comfy-Org/ace_step_1.5_ComfyUI_files](https://huggingface.co/Comfy-Org/ace_step_1.5_ComfyUI_files) | [ACE-Step](https://huggingface.co/ACE-Step/ACE-Step-v1) | see model card |
+| Qwen 0.6B / 4B / 3-8B | Comfy-Org repacks of [Qwen/Qwen3-*](https://huggingface.co/Qwen) | Apache 2.0 / Qwen RL | mostly permissive |
+| huihui-ai abliterated weights | [huihui-ai](https://huggingface.co/huihui-ai) | inherits parent license | derivatives |
 
 [**▶ QuickStart**](#quickstart) · [**Why DGX Spark**](#why-this-image-exists--target-system) · [**Hardware Compatibility**](#hardware-compatibility-matrix) · [**What's Bundled**](#whats-bundled) · [**Optimization Story**](#optimization-story) · [**🤖 AI-Agent deployment guide → AGENTS.md**](AGENTS.md)
 
 ---
 
 ## Quickstart
+
+### 1. Get a HuggingFace token (5 min, free)
+
+Required for `:latest` (auto-download). Optional for `:slim`.
+
+1. Sign up / sign in at [huggingface.co](https://huggingface.co/join).
+2. Go to **[Settings → Access Tokens](https://huggingface.co/settings/tokens)**.
+3. Click **"+ Create new token"** → name it (e.g. `dgx-spark`) → **Token type: Read** → Create.
+4. Copy the token. It looks like `hf_AbCd1234...`.
+
+### 2. Accept gated-model licenses (3 click-throughs)
+
+A few of the bundled-by-default models are gated by their authors. Open each link, sign in, and click **"Agree and access repository"**:
+
+- ✅ **[FLUX.2-dev](https://huggingface.co/black-forest-labs/FLUX.2-dev)** — required for workflow 01 (Flux 2 t2i)
+- ✅ **[FLUX.2-klein-base-9b-fp8](https://huggingface.co/black-forest-labs/FLUX.2-klein-base-9b-fp8)** — required for workflow 08 (Klein 9B)
+- ✅ **[FLUX.2-small-decoder](https://huggingface.co/black-forest-labs/FLUX.2-small-decoder)** — Flux 2 VAE used by canonical templates
+
+(Mistral, Gemma, LTX 2.3, Qwen, ACE-Step are not gated — your token can pull them right away once you sign in once.)
+
+### 3. Launch
 
 ```bash
 mkdir -p ~/comfyui-spark/workspace && cd ~/comfyui-spark
@@ -107,10 +88,29 @@ docker compose up -d && docker compose logs -f comfyui
 ```
 
 First start downloads ~285 GB of models. At ~95 MB/s expect ~50 minutes;
-look for `download summary: 28 ok, 0 failed` then `Launching ComfyUI on
+look for `download summary: 35 ok, 0 failed` then `Launching ComfyUI on
 port 8188`.
 
 Then open `http://<spark-host>:8188`.
+
+### Or — `:slim` mode (no auto-download, you pick everything)
+
+```bash
+sed -i 's|comfyui-aeon-spark:latest|comfyui-aeon-spark:slim|' docker-compose.yml
+docker compose up -d
+```
+
+ComfyUI starts in seconds with zero models on disk. Open the **Manager** in the top bar, click **"Install Missing Models"** when you load a workflow, or open the **Asset Browser** to install any specific model. Every download goes server-side into `./workspace/models/<directory>/` — never to your browser. Set `HF_TOKEN` if you plan to install gated models.
+
+### Adding more gated models later
+
+If you load a community workflow that needs a gated model:
+
+1. Open the model's HF page → click **Agree and access**
+2. The same `HF_TOKEN` you set up earlier already works (no re-login needed)
+3. Click **Install** in the ComfyUI UI
+
+If you need to expand `HF_TOKEN`'s permissions (e.g., the model is in an org you need access to), regenerate it on the [tokens page](https://huggingface.co/settings/tokens) and update `.env`, then `docker compose up -d` to pick it up.
 
 ---
 

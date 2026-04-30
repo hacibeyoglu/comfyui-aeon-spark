@@ -11,26 +11,23 @@
 **Repository:** `AEON-7/comfyui-aeon-spark`
 **Image (default):** `ghcr.io/aeon-7/comfyui-aeon-spark:latest` (= `:full`, 17 GB — auto-downloads ~285 GB of weights on first start using user's HF_TOKEN)
 **Alternate (no weights):** `ghcr.io/aeon-7/comfyui-aeon-spark:slim` (= `:base`, 17 GB — zero auto-download, user picks every model via in-UI Manager)
-**Alternate (locally buildable, NOT on GHCR):** `:bake` — every model baked. **Do not redistribute** — license restrictions on bundled FLUX/Mistral/Gemma weights prohibit redistribution.
+
+No image variant pre-embeds weights. The downloader runs server-side under the user's HF token, so each model's license is accepted by the user at HuggingFace, never by us as a redistributor.
 **Purpose:** ComfyUI workstation pre-loaded with Flux 2 Dev, LTX 2.3 22B, and ACE-Step v1.5 XL Turbo, optimized for DGX Spark (GB10 / Blackwell / **sm_121a**).
 **You are deploying onto:** a single DGX Spark host with Docker installed.
 **Approximate disk needed:**
-- **Slim** (default): **350 GB** (17 GB image + 285 GB workspace + headroom).
-- **Full** (pre-baked): **300 GB** (277 GB image + ~20 GB workspace headroom).
+- **`:latest` (= `:full`)**: **350 GB** (17 GB image + 285 GB workspace for downloaded models + headroom).
+- **`:slim`**: **50 GB initially** (17 GB image + ~30 GB headroom for whatever the user installs via UI).
 
 **Approximate time to first generation:**
-- **Slim**: **~50 minutes** (image pull ~5 min + model download ~45 min — bound by HF bandwidth).
-- **Full**: **pull-time + ~10 sec** (no downloads on first start; pull time depends on your connection and image size).
+- **`:latest`**: **~50 minutes** on first start (image pull ~5 min + model download ~45 min — bound by HF bandwidth). Subsequent restarts: seconds.
+- **`:slim`**: **~5 minutes** image pull, then user picks models on-demand via UI (each download is server-side).
 
-Pick **`:latest` (= `:full`)** for normal deployments where the user has an HF account.
+Pick **`:latest` (= `:full`)** for normal deployments where the user has an HF account and wants the bundled stack ready to run.
 Pick **`:slim`** when:
-- The user wants total control over which models land on disk (license compliance is paramount).
-- The user has restricted HF access or wants to use community-hosted alternatives.
+- The user wants total control over which models land on disk.
+- The user has restricted HF access or prefers community-hosted alternatives.
 - The user prefers to install each model interactively via the UI Manager.
-Pick **`:bake`** (locally buildable only — see `Dockerfile.full` in repo) when:
-- The Spark is fully air-gapped after pull.
-- The deployment must be identical to a known-good byte set across hosts.
-- **You will not redistribute the resulting image** (license restrictions).
 
 ---
 
@@ -91,15 +88,16 @@ Plug the user's values into the variables below and run as a single block.
 
 ```bash
 # ── parameters ──────────────────────────────────────────────────────────────
-IMAGE_TAG="${IMAGE_TAG:-latest}"             # `latest` (slim) or `full` (pre-baked)
+IMAGE_TAG="${IMAGE_TAG:-latest}"             # `latest` (auto-download) or `slim` (no-download)
 WORKSPACE="${WORKSPACE:-$HOME/comfyui-spark}"
 COMFYUI_PORT="${COMFYUI_PORT:-8188}"
-SKIP_ABLITERATED="${SKIP_ABLITERATED:-0}"   # set to 1 to skip ~70 GB
-# HF_TOKEN is required for `latest`/slim (downloads gated repos at runtime).
-# It is OPTIONAL for `full` (everything pre-baked).  Pass empty string if `full`.
+SKIP_ABLITERATED="${SKIP_ABLITERATED:-0}"   # set to 1 to skip the ~70 GB huihui-ai snapshots
+# HF_TOKEN is required for `:latest` (the downloader pulls gated repos).
+# It is OPTIONAL but recommended for `:slim` (the user will likely install
+# gated models via the UI Manager later).
 HF_TOKEN="${HF_TOKEN:-}"
-if [ "$IMAGE_TAG" = "latest" ] || [ "$IMAGE_TAG" = "slim" ] || [ "$IMAGE_TAG" = "bf16-flux2-ltx2.3" ] || [ "$IMAGE_TAG" = "cu130-sm121a" ]; then
-    : "${HF_TOKEN:?must be set when using slim tag; ask user for hf_... read token}"
+if [ "$IMAGE_TAG" = "latest" ] || [ "$IMAGE_TAG" = "full" ] || [ "$IMAGE_TAG" = "bf16-flux2-ltx2.3" ] || [ "$IMAGE_TAG" = "cu130-sm121a" ]; then
+    : "${HF_TOKEN:?must be set when using the auto-download tag; ask user for hf_... read token}"
 fi
 # ────────────────────────────────────────────────────────────────────────────
 

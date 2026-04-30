@@ -99,29 +99,6 @@ if [ -d /opt/default_workflows ]; then
 fi
 
 # -----------------------------------------------------------------------------
-# 4b. Wire baked models (full-image variant only): write extra_model_paths.yaml
-#     so ComfyUI's loaders see /opt/baked_models alongside the user volume.
-# -----------------------------------------------------------------------------
-if [ -n "${BAKED_MODELS:-}" ] && [ -d "${BAKED_MODELS}" ]; then
-    log "Baked models detected at ${BAKED_MODELS} — wiring extra_model_paths.yaml"
-    cat > "${COMFY_HOME}/extra_model_paths.yaml" <<EOF
-baked:
-    base_path: ${BAKED_MODELS}
-    is_default: false
-    diffusion_models: diffusion_models/
-    checkpoints: checkpoints/
-    text_encoders: text_encoders/
-    clip: text_encoders/
-    vae: vae/
-    loras: loras/
-    latent_upscale_models: latent_upscale_models/
-EOF
-    # Default: with baked models present, skip the auto-downloader unless
-    # the user explicitly opts in (FORCE_MODEL_DOWNLOAD=1).
-    : "${SKIP_MODEL_DOWNLOAD:=1}"
-fi
-
-# -----------------------------------------------------------------------------
 # 5. Download models — only on first start, or when explicitly forced.
 #    Skip with SKIP_MODEL_DOWNLOAD=1, force with FORCE_MODEL_DOWNLOAD=1.
 # -----------------------------------------------------------------------------
