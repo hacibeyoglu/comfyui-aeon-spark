@@ -9,8 +9,9 @@
 ## 0 · Identity
 
 **Repository:** `AEON-7/comfyui-aeon-spark`
-**Image:** `ghcr.io/aeon-7/comfyui-aeon-spark:latest` (slim, 17 GB — published)
-**Alternate:** `:full` (277 GB, every model pre-baked) — **buildable locally via `Dockerfile.full`; not currently on GHCR.** If the user wants the full variant, follow the "Building `:full` locally" section in README.md.
+**Image (default):** `ghcr.io/aeon-7/comfyui-aeon-spark:latest` (= `:full`, 17 GB — auto-downloads ~285 GB of weights on first start using user's HF_TOKEN)
+**Alternate (no weights):** `ghcr.io/aeon-7/comfyui-aeon-spark:slim` (= `:base`, 17 GB — zero auto-download, user picks every model via in-UI Manager)
+**Alternate (locally buildable, NOT on GHCR):** `:bake` — every model baked. **Do not redistribute** — license restrictions on bundled FLUX/Mistral/Gemma weights prohibit redistribution.
 **Purpose:** ComfyUI workstation pre-loaded with Flux 2 Dev, LTX 2.3 22B, and ACE-Step v1.5 XL Turbo, optimized for DGX Spark (GB10 / Blackwell / **sm_121a**).
 **You are deploying onto:** a single DGX Spark host with Docker installed.
 **Approximate disk needed:**
@@ -21,10 +22,15 @@
 - **Slim**: **~50 minutes** (image pull ~5 min + model download ~45 min — bound by HF bandwidth).
 - **Full**: **pull-time + ~10 sec** (no downloads on first start; pull time depends on your connection and image size).
 
-Pick **slim** for normal deployments. Pick **full** when:
-- The Spark is air-gapped or has restricted egress.
-- You don't have / don't want to provide an HF token.
-- You want a sealed, reproducible deployment that's identical on every host (every model byte pinned to the image digest).
+Pick **`:latest` (= `:full`)** for normal deployments where the user has an HF account.
+Pick **`:slim`** when:
+- The user wants total control over which models land on disk (license compliance is paramount).
+- The user has restricted HF access or wants to use community-hosted alternatives.
+- The user prefers to install each model interactively via the UI Manager.
+Pick **`:bake`** (locally buildable only — see `Dockerfile.full` in repo) when:
+- The Spark is fully air-gapped after pull.
+- The deployment must be identical to a known-good byte set across hosts.
+- **You will not redistribute the resulting image** (license restrictions).
 
 ---
 

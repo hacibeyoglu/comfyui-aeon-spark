@@ -8,18 +8,33 @@
 > sm_121a + NVFP4 (CUTLASS) hardware GEMMs.
 
 ```
-docker pull ghcr.io/aeon-7/comfyui-aeon-spark:latest          # slim — recommended
-docker pull ghcr.io/aeon-7/comfyui-aeon-spark:full            # everything baked, no first-start downloads
+docker pull ghcr.io/aeon-7/comfyui-aeon-spark:latest          # auto-downloads weights using your HF_TOKEN
+docker pull ghcr.io/aeon-7/comfyui-aeon-spark:slim            # no auto-download — pick models via UI
 ```
 
 ### Tag matrix
 
-| Tag | Image size | Status | First-start time | When to use |
-| --- | --- | --- | --- | --- |
-| `latest` / `slim` / `bf16-flux2-ltx2.3` / `cu130-sm121a` | **17 GB** | ✅ on GHCR | ~50 min (downloads ~285 GB on first start) | normal use — fastest pull, easy to re-tag/customize |
-| `full` / `bf16-flux2-ltx2.3-full` | **277 GB** | 🛠️ build locally (`Dockerfile.full`) | **~10 sec** (every model pre-baked) | air-gapped Spark, no HF account, instant boot, redistribute as a sealed unit |
+| Tag | Image size | What's inside | License posture |
+| --- | --- | --- | --- |
+| **`latest`** / `full` / `bf16-flux2-ltx2.3` / `cu130-sm121a` | **17 GB** | code + auto-downloader; on first start it pulls ~285 GB of weights into your workspace volume **using your HF_TOKEN** | ✅ you accept each model's license at HuggingFace via your account; we orchestrate the download |
+| **`slim`** / `base` | **17 GB** | code only — no auto-download, no embedded weights | ✅ totally clean; you pick every model via the in-UI Manager / asset browser |
+| **`bake`** *(local-build only — see `Dockerfile.full`)* | **277 GB** | code + 22 model files baked into image layers | ⚠️ **not published**: redistributing weights would conflict with FLUX.2 [dev] non-commercial, Mistral MRL, Gemma terms, BFL gating. Build for personal use only. |
 
-The slim image is the canonical published artifact. The full image carries 22 model files (~243 GB) pre-staged at `/opt/baked_models/` inside the image, exposed to ComfyUI via an auto-generated `extra_model_paths.yaml`. **It's currently buildable locally — registry push of a 277 GB image is bandwidth-bound.** Build instructions are below; on a fast upstream you can re-host it under your own GHCR namespace.
+#### Why three variants?
+
+Most published "ready-to-go" Stable Diffusion images bake weights and quietly violate every model's license. We do not.
+
+- **`:full`** is what you want when you have an HF account and just want it to work. The image ships a downloader script that calls HF Hub with **your** token. You're the one accepting each license at the HF model page; we never act as a redistributor.
+- **`:slim`** is for when license compliance must be airtight, when you want to swap models freely, or when your Spark has restricted egress. Click "Install Missing Models" in the UI to pull each model individually under your HF account, with full per-model license consent.
+- **`:bake`** (locally-buildable, never pushed) embeds weights for true offline use. Don't redistribute the resulting image — the licenses on the bundled models do not allow it.
+
+Read each model's license before commercial use:
+- [FLUX.2-dev](https://huggingface.co/black-forest-labs/FLUX.2-dev/blob/main/LICENSE.md) — non-commercial
+- [FLUX.2-klein-base-9b-fp8](https://huggingface.co/black-forest-labs/FLUX.2-klein-base-9b-fp8) — gated, accept on HF before pulling
+- [Mistral-Small-3](https://mistral.ai/terms#research-license) — research-use license
+- [Gemma-3](https://ai.google.dev/gemma/terms) — Gemma Terms of Use
+- [LTX 2.3](https://huggingface.co/Lightricks/LTX-2.3/blob/main/LICENSE) — Lightricks Open Weights
+- [ACE-Step v1.5](https://huggingface.co/ACE-Step/ACE-Step-v1) — see model card
 
 #### Building `:full` locally
 
