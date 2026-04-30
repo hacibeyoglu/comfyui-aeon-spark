@@ -72,13 +72,22 @@ If running on a non-Spark Blackwell box (e.g. RTX 5090), see §10 *Cross-platfor
 
 Before running anything that consumes time/bandwidth, confirm:
 
-1. **HuggingFace token** with read access — needed for Black Forest Labs gated repos (Flux 2). Form: `hf_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`.
-   Ask the user: *"Please provide your HuggingFace access token (read scope is enough; needed for Flux 2's gated repo)."*
-2. **Workspace path on the host.** Default: `~/comfyui-spark`. If the user has another mount, ask.
-3. **Whether to skip abliterated full-LLM snapshots** (~70 GB saved). Default: keep them. Ask only if disk is tight.
-4. **Public port** for the UI. Default: `8188`. Only ask if there's a conflict.
+1. **Image tag.** `latest` (= `:full`, auto-downloads ~285 GB of weights on first start) or `slim` (no auto-download — user installs each model interactively via the UI Manager). Default: `latest`.
 
-**Do not invent a token.** **Do not skip the abliterated snapshots without asking** — they're what makes the "abliterated" path work.
+2. **HuggingFace token** (`hf_AbCd1234...`, read scope). Required for `:latest` (the downloader uses it). Optional but recommended for `:slim` (the user will likely install gated models via the UI later). Ask the user: *"Please provide your HuggingFace access token (read scope; create one at https://huggingface.co/settings/tokens)."*  **Do not invent or guess a token.**
+
+3. **Gated repo licenses accepted.** Three BFL repos are gated and the HF token alone is NOT enough — the user must individually click "Agree and access" on each:
+   - https://huggingface.co/black-forest-labs/FLUX.2-dev (workflow 01)
+   - https://huggingface.co/black-forest-labs/FLUX.2-klein-base-9b-fp8 (workflow 08)
+   - https://huggingface.co/black-forest-labs/FLUX.2-small-decoder (canonical Flux 2 VAE)
+
+   Ask the user: *"Please open these three URLs in a browser, sign in, and click 'Agree and access repository'. Reply 'done' when complete."* If the user skips this, the downloader will report 403 errors on those specific files (other models will still work).
+
+4. **Workspace path on the host.** Default: `~/comfyui-spark`. If the user has another mount with more space, ask.
+
+5. **Whether to skip the abliterated full-LLM snapshots** (~70 GB saved). Default: keep them — they're swap-in alternatives for the abliterated text-encoder paths. Ask only if disk is tight.
+
+6. **Public port** for the UI. Default: `8188`. Only ask if there's a conflict.
 
 ---
 
@@ -104,17 +113,51 @@ fi
 mkdir -p "$WORKSPACE/workspace"
 cd "$WORKSPACE"
 
-# Drop the .env (used by docker compose)
+# Drop the .env (used by docker compose for variable substitution)
 cat > .env <<EOF
 HF_TOKEN=$HF_TOKEN
 COMFYUI_PORT=$COMFYUI_PORT
+IMAGE_TAG=$IMAGE_TAG
 SKIP_ABLITERATED=$SKIP_ABLITERATED
 EOF
 chmod 600 .env
 
 # Drop the docker-compose.yml
+# NOTE: the YAML below uses 'YAML' (quoted) heredoc so $-expressions stay
+# literal — docker compose substitutes them from .env at run time.
 cat > docker-compose.yml <<'YAML'
 services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: comfyui-ollama
+    runtime: nvidia
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    environment:
+      OLLAMA_HOST: "0.0.0.0:11434"
+      OLLAMA_KEEP_ALIVE: "24h"
+    volumes:
+      - ./workspace/.ollama:/root/.ollama
+    entrypoint: >-
+      /bin/sh -c '
+      /bin/ollama serve &
+      sleep 5;
+      /bin/ollama pull "${OLLAMA_PRELOAD_MODEL:-gemma3:4b}" || true;
+      wait
+      '
+    healthcheck:
+      test: ["CMD", "/bin/ollama", "list"]
+      interval: 30s
+      timeout: 10s
+      start_period: 120s
+      retries: 5
+    restart: unless-stopped
+
   comfyui:
     image: ghcr.io/aeon-7/comfyui-aeon-spark:${IMAGE_TAG:-latest}
     container_name: comfyui-spark
@@ -138,6 +181,9 @@ services:
     ulimits:
       memlock: -1
       stack: 67108864
+    depends_on:
+      ollama:
+        condition: service_healthy
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8188/system_stats >/dev/null || exit 1"]
@@ -148,7 +194,8 @@ services:
 YAML
 
 # Pull and start
-docker pull ghcr.io/aeon-7/comfyui-aeon-spark:latest
+docker pull "ghcr.io/aeon-7/comfyui-aeon-spark:$IMAGE_TAG"
+docker pull ollama/ollama:latest
 docker compose up -d
 
 echo "Container started. Tailing logs — Ctrl-C to detach."
@@ -185,8 +232,9 @@ Run **all** checks. **STOP →** and report the failure if any check fails.
 ```bash
 PORT="${COMFYUI_PORT:-8188}"
 
-# 4.1 Container is healthy
+# 4.1 Both containers are healthy
 docker ps --filter "name=comfyui-spark" --format "{{.Names}} {{.Status}}" | grep -q "healthy\|Up"
+docker ps --filter "name=comfyui-ollama" --format "{{.Names}} {{.Status}}" | grep -q "healthy\|Up"
 
 # 4.2 ComfyUI is serving
 curl -fsS "http://127.0.0.1:$PORT/system_stats" >/dev/null
@@ -205,27 +253,35 @@ print(f'OK: {dev[\"name\"]}  vram_total={dev[\"vram_total\"]/2**30:.1f} GiB')
 curl -fsS "http://127.0.0.1:$PORT/system_stats" | python3 -c "
 import sys, json
 argv = json.load(sys.stdin)['system']['argv']
-required = ['--use-sage-attention', '--bf16-unet', '--disable-pinned-memory', '--enable-manager']
+required = ['--use-sage-attention', '--bf16-unet', '--disable-pinned-memory', '--enable-manager', '--enable-assets']
 missing = [f for f in required if f not in argv]
 assert not missing, f'Missing flags: {missing}'
 print('OK: all critical flags present')
 "
 
-# 4.5 All 28 model files landed
-docker exec comfyui-spark bash -c "find /workspace/ComfyUI/models -type f \\( -name '*.safetensors' -o -name '*.ckpt' \\) ! -path '*/.cache/*' | wc -l" \
-  | (read n; [ "$n" -ge 28 ] && echo "OK: $n model files present" || echo "FAIL: only $n model files")
+# 4.5 Ollama sidecar reachable from comfyui (workflow 09 prerequisite)
+docker exec comfyui-spark curl -fsS -m 5 http://ollama:11434/api/version >/dev/null \
+  && echo "OK: ollama reachable" || echo "FAIL: ollama unreachable"
 
-# 4.6 Every seeded workflow's nodes resolve
+# 4.6 Model files on disk (only on :latest variant — :slim starts empty by design)
+if [ "$IMAGE_TAG" = "latest" ] || [ "$IMAGE_TAG" = "full" ] || [ "$IMAGE_TAG" = "bf16-flux2-ltx2.3" ] || [ "$IMAGE_TAG" = "cu130-sm121a" ]; then
+  docker exec comfyui-spark bash -c "find /workspace/ComfyUI/models -type f \\( -name '*.safetensors' -o -name '*.ckpt' \\) ! -path '*/.cache/*' | wc -l" \
+    | (read n; [ "$n" -ge 30 ] && echo "OK: $n model files present" || echo "WARN: only $n model files (expect 30+; may be running first-start download still)")
+else
+  echo "skipping model count check — :slim image starts with no models"
+fi
+
+# 4.7 Every seeded workflow's nodes resolve
 python3 <<'PY'
 import json, urllib.request, glob, os, re, sys
 PORT = os.environ.get('COMFYUI_PORT', '8188')
 ni = json.loads(urllib.request.urlopen(f'http://127.0.0.1:{PORT}/object_info', timeout=15).read())
-present = set(ni) | {'MarkdownNote','Note','Reroute','GetNode','SetNode',
+# Backend nodes + frontend-only litegraph nodes (these aren't in /object_info)
+present = set(ni) | {'MarkdownNote','Note','Reroute','PrimitiveNode','GetNode','SetNode',
                      'Bookmark (rgthree)','Fast Bypasser (rgthree)','Label (rgthree)',
                      'Fast Groups Bypasser (rgthree)','Fast Groups Muter (rgthree)'}
 uuid = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}')
-ws = os.path.expanduser('${WORKSPACE:-$HOME/comfyui-spark}/workspace/user/default/workflows/')
-ws = os.path.expandvars(ws)
+ws = os.path.expanduser(os.environ.get('WORKSPACE', os.path.expanduser('~/comfyui-spark')) + '/workspace/user/default/workflows/')
 ok = bad = 0
 for p in sorted(glob.glob(ws + '*.json')):
     types = {n['type'] for n in json.load(open(p))['nodes']}
@@ -237,7 +293,9 @@ sys.exit(0 if bad == 0 else 1)
 PY
 ```
 
-If 4.6 reports missing nodes, install them via the in-UI Manager (it's already wired) — do **not** try to install custom nodes manually with pip. **STOP →** and ask the user before running pip in the container.
+If 4.7 reports missing nodes, the user has imported a workflow that needs a custom-node pack we didn't bundle. The fix: in the ComfyUI UI top bar, click **Manager → Install Missing Custom Nodes**. The Manager is already wired (`--enable-manager` is on). Do **not** try to install custom nodes manually with pip — Manager handles it correctly server-side.
+
+If 4.6 reports a 403 in the download log, the user hasn't accepted one of the gated repo licenses. **STOP →** ask the user to visit the URLs in §2 step 3 and click "Agree and access", then re-run with `rm $WORKSPACE/workspace/.models_seeded && docker compose up -d --force-recreate`.
 
 ---
 
@@ -265,24 +323,33 @@ If 4.6 reports missing nodes, install them via the in-UI Manager (it's already w
 | Symptom | Likely cause | Exact fix |
 | --- | --- | --- |
 | `docker pull` returns 401/403 | image visibility was reverted to private | Tell the user to flip [package settings → Public](https://github.com/users/AEON-7/packages/container/comfyui-aeon-spark/settings). Do **not** try to authenticate as someone else. |
-| `download summary: ... N failed` with N>0 | flaky network or revoked HF token | Re-run `docker compose up -d --force-recreate` after `rm $WORKSPACE/workspace/.models_seeded`. If `403` lines appear in the log, the user's HF token is missing scopes — ask for a fresh one. |
-| First-time launch sits at `Starting server` for >10 min | first-call PTX→SASS JIT cache warming up | Wait. The cache lands in `$WORKSPACE/workspace/.cache/`. Subsequent launches are seconds. |
-| `OOM` during first generation | unified-memory overrun (Spark caps at 0.88) | Have the user swap a `*_bf16.safetensors` text encoder to `*_fp4_mixed.safetensors` in the loader widget — saves ~24 GB instantly via NVFP4 path. |
-| ComfyUI says "missing nodes" on a user-imported workflow | needs custom-node pack not bundled | Use the in-UI Manager → "Install Missing Custom Nodes". It already has the right backend (`--enable-manager` + the pip pkg). |
+| `download summary: ... N failed` with `403 Cannot access gated repo` lines | user hasn't clicked "Agree and access" on the gated BFL repos (see §2 step 3) | Have user open each gated URL → sign in → "Agree and access". Then `rm $WORKSPACE/workspace/.models_seeded && docker compose up -d --force-recreate` — only the failed files re-download. |
+| `download summary: ... N failed` with `401 Unauthorized` lines | HF token wrong, expired, or missing read scope | Have user generate a fresh read-scope token at https://huggingface.co/settings/tokens, update `.env`, then `docker compose up -d --force-recreate`. |
+| `download summary: ... N failed` with random network errors | flaky upstream | Just re-run: `rm $WORKSPACE/workspace/.models_seeded && docker compose up -d --force-recreate`. The downloader is idempotent — files already on disk are skipped. |
+| First-time launch sits at `Starting server` for >10 min | first-call PTX→SASS JIT cache warming up | Wait. The cache lands in `$WORKSPACE/workspace/.cache/nv/`. Subsequent launches are seconds. |
+| `OOM` during first generation | unified-memory overrun (Spark caps at 0.88) | Swap a `*_bf16.safetensors` text encoder to `*_fp4_mixed.safetensors` in the loader widget — saves ~24 GB instantly via NVFP4 path. |
+| Workflow says "missing models" when loaded in UI | model file not on disk yet | `--enable-assets` is on, so the UI's **Install Missing Models** button works server-side. Have user click it; the file lands in `$WORKSPACE/workspace/models/<dir>/`. **Do not download in your browser** — it'd save to the client machine, useless on a remote-accessed Spark. |
+| Workflow says "missing nodes" when loaded | needs a custom-node pack not bundled | Use the in-UI Manager top-bar button → **Install Missing Custom Nodes** (the new `comfyui-manager` pip pkg + `--enable-manager` wire this up). Do **not** pip-install custom nodes manually. |
+| Workflow 09 (AceStep) says `ConnectionError ... Ollama` | Ollama sidecar isn't reachable from comfyui's container | `docker compose ps` should show `comfyui-ollama` healthy. If down, `docker compose up -d ollama`. The sidecar auto-pulls `gemma3:4b` on first start. |
+| Workflow 09 wants a different Ollama model | user's prompt-expansion preferences | Have user run `docker exec comfyui-ollama ollama pull <model-name>`, then in the workflow's `OllamaConnectivityV2` widget swap the model name from `gemma3:4b` to whatever they pulled. |
 | `docker compose up` says port 8188 in use | another ComfyUI / vLLM instance is bound | `docker stop vllm-aeon-ultimate-v2` (or whatever's on it) **after** asking the user. Spark has one GPU — only one heavy consumer at a time. |
-| `Sage : unavailable` in entrypoint output | image was edited / sageattention deleted | **Do not pip install sageattention manually** — it must be the sm_121a-compiled wheel that ships in the image. `docker compose pull && up -d --force-recreate`. |
+| `Sage : unavailable` in entrypoint output | image was edited / sageattention deleted | **Do not pip install sageattention manually** — it must be the sm_121a-compiled wheel that ships in the image. `docker compose pull && docker compose up -d --force-recreate`. |
+| `Crystools ... pynvml is not installed` | image was edited or a stale image is still pulled | `docker compose pull` to grab the current image, then recreate. Modern image has pynvml installed. |
 | Container restarts every ~30s | health check failing because ComfyUI is still loading the first time | Increase `start_period` in compose to `1200s`. First start with cold model cache can exceed the default 600s. |
 
 ---
 
 ## 7 · Things you must NOT do
 
-- **Do not modify** `--use-sage-attention`, `--disable-pinned-memory`, `--enable-manager`, `TORCH_COMPILE_DISABLE=1`, or `PYTORCH_ALLOC_CONF` without asking. They are tuned for DGX Spark.
+- **Do not modify** `--use-sage-attention`, `--disable-pinned-memory`, `--enable-manager`, `--enable-assets`, `TORCH_COMPILE_DISABLE=1`, or `PYTORCH_ALLOC_CONF` without asking. They are tuned for DGX Spark; changing them silently degrades or breaks runs.
 - **Do not enable** `torch.compile` / `TORCHDYNAMO_DISABLE=0` / xformers / FlashAttention. Triton can't emit working SASS for sm_121a yet — these will silently corrupt output or crash.
-- **Do not delete** `$WORKSPACE/workspace/` to "fix" anything. That's 285 GB of weights + the user's outputs and saved workflows.
+- **Do not delete** `$WORKSPACE/workspace/` to "fix" anything. On `:latest` that's ~285 GB of weights; on `:slim` it's the user's saved workflows / outputs / Manager-installed nodes. Always survives container recreation; deleting it is a major data-loss event.
 - **Do not push** any image you build to GHCR unless the user asks. The published image is the canonical artifact.
+- **Do not bake model weights into a derived image and publish it.** Several bundled models (FLUX.2, Mistral-Small-3, Gemma) have non-commercial / research-use / gated licenses that prohibit redistribution. The published image variants deliberately ship code only; the user pulls weights from HF under their own account.
+- **Do not pip-install** sageattention, comfyui-manager, or any custom-node pack inside the container manually. The image's compiled wheel and pre-resolved deps are the source of truth — manual installs can replace working sm_121a wheels with broken stock ones. If a pack needs adding, it goes through the in-UI Manager (which uses the right server-side install path).
 - **Do not bypass** the visibility check by assuming the package is private. Run the `curl` test in §4.
 - **Do not change** the volume layout to a per-subdirectory mount. The single-volume-per-workspace design is intentional.
+- **Do not stop or remove the Ollama sidecar** unless the user explicitly does not need workflow 09 (AceStep audio). Workflow 09 fails at runtime without it.
 - **Do not commit** the `.env` file or any model `.safetensors` to git. They're in `.gitignore` for a reason.
 
 ---
@@ -291,19 +358,23 @@ If 4.6 reports missing nodes, install them via the in-UI Manager (it's already w
 
 ```
 $WORKSPACE/                                    # host-side
-├── .env                                       # secrets — DO NOT log/echo
+├── .env                                       # HF_TOKEN + tunables — DO NOT log/echo or commit
 ├── docker-compose.yml                         # the launcher
 └── workspace/                                 # mounted into the container
-    ├── .models_seeded                         # sentinel; delete to force re-download
-    ├── models/                                # 285 GB pre-staged
-    ├── custom_nodes/                          # 14 bundled + Manager-installed
+    ├── .models_seeded                         # sentinel; delete to force re-download (on :latest)
+    ├── .ollama/                               # Ollama model cache (gemma3:4b lives here)
+    ├── models/                                # ~285 GB on :latest after first start; empty on :slim
+    │   ├── diffusion_models/  checkpoints/  text_encoders/  vae/  loras/  ...
+    ├── custom_nodes/                          # 14 bundled (seeded on first start) + Manager-installed
     ├── output/                                # generated images / videos / audio
     ├── input/                                 # user's reference inputs
-    ├── user/default/workflows/                # 8 seeded + user-saved
-    └── .cache/huggingface/                    # HF download metadata
+    ├── user/default/workflows/                # 8 seeded + anything the user saves
+    └── .cache/                                # HF + nv (PTX→SASS JIT) caches
 ```
 
-Inside the container, `/workspace/ComfyUI` is `$WORKSPACE/workspace/`. ComfyUI's own install is at `/opt/ComfyUI/` and is symlinked into the workspace by the entrypoint on first start.
+Inside the `comfyui` container, `/workspace/ComfyUI` is mapped to `$WORKSPACE/workspace/`. ComfyUI's own install is at `/opt/ComfyUI/` (in the image) and the entrypoint symlinks the user-data subdirs into the volume on first start.
+
+The `ollama` container has its own state at `$WORKSPACE/workspace/.ollama/` so the `gemma3:4b` model survives container recreations.
 
 ---
 
@@ -339,9 +410,17 @@ docker compose up -d
 
 The `:latest` tag advances when this repo cuts a new release.
 
-### 9.5 Bake new defaults into a forked image
+### 9.5 Add an Ollama model for prompt-expansion workflows
 
-Only if the user wants to redistribute. The repo at https://github.com/AEON-7/comfyui-aeon-spark has the full build context. Follow that README's *Build / push reference* section.
+```bash
+docker exec comfyui-ollama ollama pull <model>     # e.g. llama3.2:3b, qwen2.5:7b, etc.
+```
+
+Then in the workflow that uses it, edit the `OllamaConnectivityV2` widget to pick the new model name. The pull persists across container restarts because Ollama state is in the volume.
+
+### 9.6 Add a workflow as a default for *future* fresh starts
+
+Only relevant if the user wants to fork and redistribute their own image. The build context is at https://github.com/AEON-7/comfyui-aeon-spark — drop a `.json` into `workflows/`, `docker compose build`, push to your own GHCR namespace.
 
 ---
 
@@ -349,16 +428,17 @@ Only if the user wants to redistribute. The repo at https://github.com/AEON-7/co
 
 If pre-flight (§1) reports a different GPU, the image still runs but isn't compiled optimally for that arch. See the *Hardware Compatibility Matrix* in the repo README for per-GPU expectations. **Ask the user before proceeding** if they're not on a Spark — the deployment is the same but performance and required tweaks differ.
 
-If they're on consumer Blackwell (RTX 5090/5080) and want a native-speed image, you'll need to rebuild for `linux/amd64` from the build context:
+If they're on consumer Blackwell (RTX 5090/5080) and want a native-speed image, rebuild for `linux/amd64` with the right arch list:
 
 ```bash
 git clone https://github.com/AEON-7/comfyui-aeon-spark.git
 cd comfyui-aeon-spark
 DOCKER_BUILDKIT=1 docker buildx build --platform linux/amd64 \
+  --build-arg TORCH_CUDA_ARCH_LIST="12.0" \
   -t comfyui-aeon-spark:cu130-x86 .
 ```
 
-That rebuild compiles SageAttention v3 against `sm_120` automatically (the build script reads the active `torch.cuda.get_device_capability()` and the ARM-base layer is replaced with `nvidia/cuda:13.0.2-devel-ubuntu24.04` x86). The user then runs the same `docker compose up -d` flow with the local image.
+That rebuild compiles SageAttention v3 against `sm_120` (consumer Blackwell). The user then runs the same `docker compose up -d` flow with the local image (replace the GHCR image ref with `comfyui-aeon-spark:cu130-x86`).
 
 ---
 
@@ -367,13 +447,17 @@ That rebuild compiles SageAttention v3 against `sm_120` automatically (the build
 You are an agent helping a human. **Pause and ask** if:
 
 - Pre-flight (§1) fails any check.
-- The user's HF token isn't available or returns 401.
+- The user hasn't accepted the gated-repo licenses in §2 step 3 (the downloader will 403 on those files).
+- The user's HF token isn't available, returns 401, or expires.
 - §4 validation reports any failure.
-- A workflow the user imported has missing nodes that aren't in the bundled set.
-- The user wants to share GPU with another container (vLLM etc).
+- A workflow the user imported has missing nodes that aren't in the bundled set (Manager → Install Missing Custom Nodes is the answer, but get user consent first).
+- A workflow the user imported has missing **models** (Manager / Asset Browser → Install Missing Models is the answer; downloads server-side).
+- The user wants to share GPU with another container (vLLM etc) — Spark has 1 GPU.
 - Disk space is below 50 GB free at any point during model download.
 - You're about to delete anything from `$WORKSPACE/workspace/`.
 - You're about to modify the bundled launch flags.
+- You're about to modify or remove the Ollama sidecar.
+- You're considering pip-installing into the running container.
 
 For everything else: proceed and report what you did.
 
@@ -386,15 +470,20 @@ When deployment finishes, report this template to the user (filling in measured 
 ```
 ✓ Deployed ComfyUI · AEON DGX Spark on <hostname>
    - URL              : http://<host>:<port>
-   - Image digest     : sha256:<digest from /system_stats>
+   - Image            : ghcr.io/aeon-7/comfyui-aeon-spark:<tag>
    - GPU detected     : <name>  (<vram_total> GiB unified)
-   - Models on disk   : <N>/28  (<size> GB total)
-   - Workflows clean  : <N>/8
-   - Container status : healthy / starting / unhealthy
+   - Containers       : comfyui-spark <healthy/starting>  · comfyui-ollama <healthy/starting>
+   - Models on disk   : <N> files (<size> GB total) — :latest target ≥30, :slim target 0
+   - Workflows clean  : <N>/8 — every loader value resolved
+   - Ollama sidecar   : reachable, model = gemma3:4b
    - First-generation latency note: PTX→SASS JIT cache warms on first kernel call;
      warm-cache latency will be 2-3× faster than the first run.
 
 Open the URL in a browser. Try `01_flux2_text_to_image` first (smallest VRAM
 footprint, fastest to feedback). For abliterated paths, use
 `02_ltx2.3_T2V_I2V_distilled` — the abliterated Gemma LoRA is pre-applied.
+
+If a workflow says "missing models" when loaded, click **Install Missing Models**
+in the UI top bar — downloads land server-side in your workspace volume, never
+on the client browser.
 ```
