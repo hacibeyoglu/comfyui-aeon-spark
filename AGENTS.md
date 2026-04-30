@@ -9,8 +9,8 @@
 ## 0 · Identity
 
 **Repository:** `AEON-7/comfyui-aeon-spark`
-**Image:** `ghcr.io/aeon-7/comfyui-aeon-spark:latest` (default — slim, 17 GB)
-**Alternate:** `ghcr.io/aeon-7/comfyui-aeon-spark:full` (277 GB — every model pre-baked, no first-start download)
+**Image:** `ghcr.io/aeon-7/comfyui-aeon-spark:latest` (slim, 17 GB — published)
+**Alternate:** `:full` (277 GB, every model pre-baked) — **buildable locally via `Dockerfile.full`; not currently on GHCR.** If the user wants the full variant, follow the "Building `:full` locally" section in README.md.
 **Purpose:** ComfyUI workstation pre-loaded with Flux 2 Dev, LTX 2.3 22B, and ACE-Step v1.5 XL Turbo, optimized for DGX Spark (GB10 / Blackwell / **sm_121a**).
 **You are deploying onto:** a single DGX Spark host with Docker installed.
 **Approximate disk needed:**

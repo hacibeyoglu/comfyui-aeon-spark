@@ -14,12 +14,52 @@ docker pull ghcr.io/aeon-7/comfyui-aeon-spark:full            # everything baked
 
 ### Tag matrix
 
-| Tag | Image size | First-start time | When to use |
-| --- | --- | --- | --- |
-| `latest` / `slim` / `bf16-flux2-ltx2.3` / `cu130-sm121a` | **17 GB** | ~50 min (downloads ~285 GB on first start) | normal use — fastest pull, easy to re-tag/customize |
-| `full` / `bf16-flux2-ltx2.3-full` | **277 GB** | **~10 sec** (every model pre-baked) | air-gapped Spark, no HF account, instant boot, redistribute as a sealed unit |
+| Tag | Image size | Status | First-start time | When to use |
+| --- | --- | --- | --- | --- |
+| `latest` / `slim` / `bf16-flux2-ltx2.3` / `cu130-sm121a` | **17 GB** | ✅ on GHCR | ~50 min (downloads ~285 GB on first start) | normal use — fastest pull, easy to re-tag/customize |
+| `full` / `bf16-flux2-ltx2.3-full` | **277 GB** | 🛠️ build locally (`Dockerfile.full`) | **~10 sec** (every model pre-baked) | air-gapped Spark, no HF account, instant boot, redistribute as a sealed unit |
 
-The `full` tag has 22 model files (~243 GB) pre-staged at `/opt/baked_models/` inside the image, exposed to ComfyUI via an auto-generated `extra_model_paths.yaml`. The slim variant downloads the same files into the workspace volume on first start. Either way the running ComfyUI sees the same loader options.
+The slim image is the canonical published artifact. The full image carries 22 model files (~243 GB) pre-staged at `/opt/baked_models/` inside the image, exposed to ComfyUI via an auto-generated `extra_model_paths.yaml`. **It's currently buildable locally — registry push of a 277 GB image is bandwidth-bound.** Build instructions are below; on a fast upstream you can re-host it under your own GHCR namespace.
+
+#### Building `:full` locally
+
+```bash
+git clone https://github.com/AEON-7/comfyui-aeon-spark.git
+cd comfyui-aeon-spark
+
+# 1. Pull the slim base + run it once with HF_TOKEN to download all 22 model files
+#    (~285 GB into ./workspace/models/, takes ~50 min on first start)
+cp .env.example .env  # edit HF_TOKEN
+docker compose up -d
+# wait for "download summary: 28 ok, 0 failed" then ctrl-c the logs
+
+# 2. Stage the 22 baked files via hardlinks (instant, 0 disk cost)
+docker run --rm \
+  -v $PWD:/data \
+  alpine:latest sh -c '
+    rm -rf /data/baked_models && mkdir -p /data/baked_models
+    cd /data
+    for f in $(grep -E "^[a-z_]+/[a-z0-9._-]+\.safetensors$" Dockerfile.full | awk "{print \$2}" | sort -u); do
+      src="workspace/models/${f#baked_models/}"
+      dst="$f"
+      mkdir -p "$(dirname "$dst")"
+      [ -f "$src" ] && ln -f "$src" "$dst"
+    done
+    chown -R 1000:1000 /data/baked_models
+  '
+
+# 3. Build (uses BuildKit's per-file COPY, max layer size 46 GB)
+DOCKER_BUILDKIT=1 docker buildx build -f Dockerfile.full \
+  -t ghcr.io/<your-namespace>/comfyui-aeon-spark:full --load .
+
+# 4. Push to your registry
+docker push ghcr.io/<your-namespace>/comfyui-aeon-spark:full
+```
+
+> **GHCR push tip:** large-image pushes can hang silently if the docker daemon
+> gets into a bad state. If you see no progress after a few minutes,
+> `sudo systemctl restart docker` and retry. Per-file layers (already configured
+> in `Dockerfile.full`) help — keep individual files ≤ 50 GB.
 
 [**▶ QuickStart**](#quickstart) · [**Why DGX Spark**](#why-this-image-exists--target-system) · [**Hardware Compatibility**](#hardware-compatibility-matrix) · [**What's Bundled**](#whats-bundled) · [**Optimization Story**](#optimization-story) · [**🤖 AI-Agent deployment guide → AGENTS.md**](AGENTS.md)
 
