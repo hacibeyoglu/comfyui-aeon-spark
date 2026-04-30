@@ -98,18 +98,41 @@ mkdir -p .sync-old
 cp -a workflows .sync-old/workflows 2>/dev/null || true
 cp -a download_models.py .sync-old/download_models.py 2>/dev/null || true
 
+IS_GIT=0
 if [ -d .git ]; then
-    echo "  git checkout detected — running 'git pull --ff-only'"
-    git fetch --quiet origin
-    if git pull --ff-only --quiet origin "$(git rev-parse --abbrev-ref HEAD)" 2>&1 | tee /dev/stderr | grep -q "fatal"; then
-        echo "${Y}⚠${D}  git pull had conflicts; falling back to snapshot fetch"
-        IS_GIT=0
-    else
-        echo "${G}✓${D} repo updated"
+    echo "  git checkout detected — running 'git pull --ff-only --autostash'"
+    git fetch --quiet origin || true
+    BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo main)
+
+    # If untracked files would block the pull (e.g. sync.sh added later
+    # in an old deploy), move them aside, pull, then drop the backup if
+    # the pulled version supersedes them.
+    if pull_out=$(git pull --ff-only --autostash --quiet origin "$BRANCH" 2>&1); then
+        echo "${G}✓${D} repo fast-forwarded"
         IS_GIT=1
+    else
+        echo "${Y}⚠${D}  git pull failed:"
+        echo "$pull_out" | sed 's/^/      /' | head -10
+        # Try to recover: stash untracked, pull again
+        if echo "$pull_out" | grep -q "untracked working tree files"; then
+            echo "  retrying after moving conflicting untracked files aside…"
+            mkdir -p .sync-quarantine
+            # Extract the conflicting filenames from git's output
+            blockers=$(echo "$pull_out" | sed -n '/^[[:space:]]*[A-Za-z0-9._/-]\+/p' | tr -d '\t' | sed 's/^[[:space:]]*//' | grep -E '\.(sh|py|json|md|yml)$' || true)
+            for f in $blockers; do
+                if [ -f "$f" ]; then
+                    mkdir -p ".sync-quarantine/$(dirname "$f")" 2>/dev/null
+                    mv "$f" ".sync-quarantine/$f" 2>/dev/null && echo "      quarantined: $f"
+                fi
+            done
+            if git pull --ff-only --quiet origin "$BRANCH" 2>&1; then
+                echo "${G}✓${D} repo fast-forwarded after quarantine"
+                IS_GIT=1
+            else
+                echo "${R}✗${D} git pull still failing — falling back to snapshot fetch"
+            fi
+        fi
     fi
-else
-    IS_GIT=0
 fi
 
 if [ "$IS_GIT" = "0" ]; then
@@ -204,17 +227,55 @@ fi
 # ── Step 6: stream the diff-relevant log lines ──────────────────────────────
 echo
 echo "${C}━━━ 5/5: Watching for new items to land ━━━${D}"
-echo "  (press Ctrl-C to detach — sync continues in background)"
 echo
-docker compose logs -f comfyui 2>&1 | \
-  grep -E --line-buffered "Seeding (custom node|workflow):|⤓ |✓ done:|download summary:|Launching ComfyUI" | \
-  awk '
-    /Launching ComfyUI/ { print; print ""; print "✓ Sync complete"; exit }
-    /Seeding/   { print "  + " $0; next }
-    /⤓/         { print "  ↓ " $0; next }
-    /✓ done/    { print "  ✓ " $0; next }
-    /download summary/ { print "  ∑ " $0; next }
-    { print }
-  '
+
+# Wait up to 600s for ComfyUI to come back online
+TIMEOUT=600
+PORT="${COMFYUI_PORT:-8188}"
+START=$(date +%s)
+
+# Tail with --tail=500 to include the entrypoint history (seeding, downloads,
+# launch line) — `-f` alone only shows lines AFTER the tail starts, so a fast
+# launch can outrun us. We let the awk script exit on the launch marker, OR
+# break out via timeout.
+(
+    docker compose logs --tail=500 -f comfyui 2>&1 | \
+        grep -E --line-buffered "Seeding (custom node|workflow):|⤓ |✓ done:|download summary:|Launching ComfyUI" | \
+        awk '
+          /Seeding/             { printf "  + %s\n", $0; fflush(); next }
+          /⤓/                   { printf "  ↓ %s\n", $0; fflush(); next }
+          /✓ done/              { printf "  ✓ %s\n", $0; fflush(); next }
+          /download summary/    { printf "  ∑ %s\n", $0; fflush(); next }
+          /Launching ComfyUI/   { printf "  ▶ %s\n\n  ✓ ComfyUI launched\n", $0; fflush(); exit }
+          { print; fflush() }
+        '
+) &
+TAIL_PID=$!
+
+# Independently poll readiness — if the API responds and the tail is still
+# alive (because launch line was already in history pre-tail), kill it.
+while kill -0 "$TAIL_PID" 2>/dev/null; do
+    if [ $(( $(date +%s) - START )) -gt "$TIMEOUT" ]; then
+        echo "${Y}⚠${D}  tail timed out after ${TIMEOUT}s — sync continues in background"
+        kill "$TAIL_PID" 2>/dev/null
+        break
+    fi
+    if curl -fsS -m 2 "http://127.0.0.1:$PORT/system_stats" >/dev/null 2>&1; then
+        # Give the awk pipe a beat to print any in-flight lines, then end
+        sleep 1
+        kill "$TAIL_PID" 2>/dev/null && echo "  ▶ ComfyUI is responding on port $PORT"
+        break
+    fi
+    sleep 3
+done
+wait "$TAIL_PID" 2>/dev/null || true
+
+cat <<EOF
+
+${G}✓${D} Sync complete.
+   - Volume preserved (your installed nodes / saved workflows untouched)
+   - Open http://<spark-host>:${PORT} when you're ready
+   - Check Manager → Install Queue if any new models are still downloading
+EOF
 
 rm -rf .sync-old
