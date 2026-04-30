@@ -6,6 +6,47 @@
 
 ---
 
+## ▶ FIRST CHECK: fresh deploy or existing deploy?
+
+**Don't blindly redeploy.** If the user has already installed this stack, doing a fresh deploy means re-downloading up to ~285 GB of model weights and forfeiting any nodes/workflows they've added via Manager. Use the incremental `sync.sh` path instead.
+
+Run this detection block before §1:
+
+```bash
+# Detect whether the user has an existing comfyui-aeon-spark deployment.
+# Common candidate locations (priority order):
+for candidate in \
+    "$PWD" \
+    "$HOME/comfyui-spark" \
+    "$HOME/comfyui-test/comfyui-aeon-spark" \
+    "$HOME/comfyui-aeon-spark"; do
+    if [ -f "$candidate/.env" ] && [ -f "$candidate/docker-compose.yml" ]; then
+        DEPLOY_DIR="$candidate"
+        break
+    fi
+done
+
+if [ -n "${DEPLOY_DIR:-}" ]; then
+    echo "EXISTING_DEPLOY at: $DEPLOY_DIR"
+elif docker ps -a --format '{{.Names}}' | grep -q '^comfyui-spark$'; then
+    echo "EXISTING_CONTAINER (deploy dir not auto-detected — ask the user where their .env lives)"
+else
+    echo "FRESH_DEPLOY"
+fi
+```
+
+Then branch:
+
+| Detection result | Where to go |
+| --- | --- |
+| `FRESH_DEPLOY` | continue with **§1 Pre-flight** below — the user has nothing yet |
+| `EXISTING_DEPLOY at: …` | **skip to §11 Incremental sync** — saves the 285 GB re-download |
+| `EXISTING_CONTAINER` (no dir found) | ask the user: *"You have a comfyui-spark container running. Where is your deployment directory (the one with `.env` and `docker-compose.yml`)?"* — once they tell you, treat as `EXISTING_DEPLOY` and go to §11 |
+
+**Why this matters:** sync.sh only fetches the delta — new workflows, new model entries, image updates — without touching the user's volume. A fresh deploy would re-pull every weight under their HF token from scratch and overwrite their custom_nodes/ + saved workflows seeding. **Sync first, deploy fresh only if they don't have one yet.**
+
+---
+
 ## 0 · Identity
 
 **Repository:** `AEON-7/comfyui-aeon-spark`
@@ -407,25 +448,12 @@ Use the in-UI Manager. It writes to `$WORKSPACE/workspace/custom_nodes/<pack>/` 
 
 ### 9.4 Update ComfyUI itself / pull new workflows + models
 
+See **§11 Incremental sync** for the full runbook (which file to detect, output to parse, when sync is the wrong tool, validation post-sync). TL;DR:
+
 ```bash
 cd "$WORKSPACE"
-./sync.sh --yes              # incremental: pulls latest image, refreshes
-                             # workflows/, runs idempotent downloader on
-                             # any new entries — preserves user volume
+./sync.sh --yes              # idempotent — only fetches the delta
 ```
-
-`sync.sh` does:
-1. `docker compose pull` (pulls latest image; new bundled custom nodes come this way)
-2. `git pull` (or shallow re-clone) the repo so `workflows/` + `download_models.py` + `setup.sh` + `entrypoint.sh` are current
-3. Diffs against the user's volume — reports new workflows, new model-download entries, image change
-4. Recreates the container — entrypoint's idempotent seeders ADD missing files only, never overwrite or delete user content
-5. Tails the boot log filtered to "Seeding…", "⤓", "✓ done:", "download summary" so the agent can parse what landed
-
-Flags useful in agent contexts:
-- `--yes` — non-interactive
-- `--no-models` — refresh code/workflows but skip the downloader (for low-bandwidth or pre-vetted-only workflows)
-
-The `:latest` tag advances when this repo cuts a new release. Run `./sync.sh --yes` periodically (cron, manual, or agent-triggered) to stay current.
 
 ### 9.5 Add an Ollama model for prompt-expansion workflows
 
@@ -459,7 +487,118 @@ That rebuild compiles SageAttention v3 against `sm_120` (consumer Blackwell). Th
 
 ---
 
-## 11 · Stop conditions — when to surface to the user
+## 11 · Incremental sync (existing deployments) ← 🌟 take this path if §First Check said `EXISTING_DEPLOY`
+
+`sync.sh` exists for one reason: when the user already has a working deployment, **don't make them re-download 285 GB to get one new workflow or one new model file.** It's the supported upgrade path.
+
+### What sync.sh does
+
+1. `docker compose pull` — fetches the latest image from GHCR. Any new bundled custom-node packs ride the image layers.
+2. `git pull` (or shallow re-clone if no `.git` is present) — refreshes the in-repo files: `workflows/`, `download_models.py`, `setup.sh`, `entrypoint.sh`, `Dockerfile`, etc. **Has a recovery path** for git pull conflicts caused by untracked files (quarantines them under `.sync-quarantine/`, then retries the fast-forward).
+3. **Diffs** the user's volume against the freshly-pulled repo — reports new workflows, new model-download entries, image change.
+4. Recreates the container — the entrypoint's seeders are **idempotent**: they ADD missing items (workflows, custom nodes) without overwriting or deleting user content (saved workflows, Manager-installed nodes, generated outputs).
+5. The downloader is also **idempotent by basename**: files already on disk are skipped. Only entries that are genuinely new pull from HuggingFace.
+6. Tails the boot log filtered to relevant items: `Seeding custom node:`, `Seeding workflow:`, `⤓` (download starts), `✓ done:` (download complete), `download summary:`, `Launching ComfyUI`. Exits cleanly when the API responds on `:8188` (or after a 600s timeout).
+
+### Running it
+
+Standard interactive run (the user is at a TTY):
+
+```bash
+cd "$DEPLOY_DIR"     # the path you found in §First Check
+./sync.sh
+```
+
+Non-interactive (you're an agent or it's running from cron):
+
+```bash
+cd "$DEPLOY_DIR"
+./sync.sh --yes
+```
+
+Refresh code + workflows but skip the model downloader (saves bandwidth, useful when the user only cares about a JS/workflow update or wants to vet new model entries before fetching):
+
+```bash
+cd "$DEPLOY_DIR"
+./sync.sh --yes --no-models
+```
+
+### If sync.sh isn't present yet (very-old deploy)
+
+Old deployments from before sync.sh existed don't have the script in their directory. Bootstrap it first via the GitHub API (avoids `raw.githubusercontent.com` CDN-cache staleness):
+
+```bash
+cd "$DEPLOY_DIR"
+gh api repos/AEON-7/comfyui-aeon-spark/contents/sync.sh \
+   -H "Accept: application/vnd.github.raw" > sync.sh
+chmod +x sync.sh
+./sync.sh --yes
+```
+
+Or if `gh` CLI isn't installed:
+
+```bash
+cd "$DEPLOY_DIR"
+curl -fsSL https://raw.githubusercontent.com/AEON-7/comfyui-aeon-spark/main/sync.sh -o sync.sh
+chmod +x sync.sh
+./sync.sh --yes
+```
+
+### Parsing sync.sh output (what to expect, what to look for)
+
+Three completion paths:
+
+1. **Already up-to-date** — sync.sh exits early after Step 3 with `✓ you're already up-to-date — nothing to sync`. No container restart, no downloads. Report this to the user verbatim.
+
+2. **New items detected, sync applied** — output looks like:
+   ```
+   ━━━ 3/5: Diff vs your current state ━━━
+     Image:        updated  (was: <old> / now: <new>)
+     Workflows:    N new
+                   + 10_ltx2.3_prompt_relay.json
+     Models:       N new download entries
+                   + diffusion_models/<filename>.safetensors
+
+   ━━━ 4/5: Recreate container ━━━
+   ━━━ 5/5: Watching for new items to land ━━━
+     + Seeding custom node: ComfyUI-PromptRelay
+     + Seeding workflow: 10_ltx2.3_prompt_relay.json
+     ↓ ⤓ <model file> 25GB ...
+     ✓ ✓ done: <model file>
+     ▶ Launching ComfyUI on port 8188
+
+     ✓ ComfyUI launched
+     ▶ ComfyUI is responding on port 8188
+
+   ✓ Sync complete.
+   ```
+
+3. **Failure** — git conflict not auto-resolvable, image pull denied, or container won't restart. **STOP →** and report the exact error to the user; do not retry blindly.
+
+### Validation after sync (use the same checks as §4)
+
+After sync.sh exits with `✓ Sync complete`, run §4 §4.1–§4.7 to confirm container health, GPU access, flag set, Ollama reachability, model count, and workflow node resolution. The numbers should be **as good as or better than** before the sync (more nodes if a new pack landed, more workflows if new ones landed).
+
+### When sync.sh is the wrong tool
+
+- The user wants to **change image variant** (e.g., switch from `:slim` to `:latest`): edit `IMAGE_TAG` in their `.env` and run `docker compose up -d --force-recreate`. sync.sh keeps whatever variant is in `.env`.
+- The user wants to **change HF token**: edit `HF_TOKEN` in `.env`, then `docker compose up -d --force-recreate`.
+- The user wants to **wipe everything and start over**: have them `docker compose down -v && rm -rf workspace/` and then run `./setup.sh` fresh. sync.sh deliberately preserves volume content.
+- The user wants to **roll back a sync** (e.g. new workflow caused issues): `git -C $DEPLOY_DIR reset --hard HEAD~1 && docker compose pull && docker compose up -d --force-recreate` to revert. The volume content from before the sync is unchanged.
+
+### One-liner agents can paste end-to-end
+
+For a verified clean update on an existing deployment in `~/comfyui-spark`:
+
+```bash
+cd ~/comfyui-spark && ./sync.sh --yes && \
+  curl -fsS http://127.0.0.1:8188/system_stats >/dev/null && \
+  echo "✓ sync ok, ComfyUI responding"
+```
+
+---
+
+## 12 · Stop conditions — when to surface to the user
 
 You are an agent helping a human. **Pause and ask** if:
 
@@ -480,9 +619,9 @@ For everything else: proceed and report what you did.
 
 ---
 
-## 12 · Reporting back
+## 13 · Reporting back
 
-When deployment finishes, report this template to the user (filling in measured values):
+When deployment finishes (whether fresh §4 or sync §11), report this template to the user (filling in measured values):
 
 ```
 ✓ Deployed ComfyUI · AEON DGX Spark on <hostname>
