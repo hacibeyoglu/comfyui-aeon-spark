@@ -315,7 +315,8 @@ If 4.6 reports a 403 in the download log, the user hasn't accepted one of the ga
   | `07_ltx2.3_id_lora` | LTX 2.3 with identity LoRA |
   | `08_flux2_klein_9b_text_to_image` | Flux 2 Klein 9B variant |
   | `09_acestep_ancient_sufi_xl` | ACE-Step audio (with Ollama prompt expansion) |
-- ComfyUI-Manager wired and clickable in the top bar (for installing additional nodes).
+- ComfyUI-Manager wired and clickable in the top bar (for installing additional nodes/models server-side).
+- **Workflow Overview → Missing Models → Download** routes through the bundled `aeon-server-side-downloads` extension — clicks go server-side via Manager's queue API, file lands in `$WORKSPACE/workspace/models/`, never on the client browser.
 - Persistent workspace at `$WORKSPACE/workspace/` — survives container recreations.
 
 ---
@@ -330,8 +331,9 @@ If 4.6 reports a 403 in the download log, the user hasn't accepted one of the ga
 | `download summary: ... N failed` with random network errors | flaky upstream | Just re-run: `rm $WORKSPACE/workspace/.models_seeded && docker compose up -d --force-recreate`. The downloader is idempotent — files already on disk are skipped. |
 | First-time launch sits at `Starting server` for >10 min | first-call PTX→SASS JIT cache warming up | Wait. The cache lands in `$WORKSPACE/workspace/.cache/nv/`. Subsequent launches are seconds. |
 | `OOM` during first generation | unified-memory overrun (Spark caps at 0.88) | Swap a `*_bf16.safetensors` text encoder to `*_fp4_mixed.safetensors` in the loader widget — saves ~24 GB instantly via NVFP4 path. |
-| Workflow says "missing models" when loaded in UI | model file not on disk yet | `--enable-assets` is on, so the UI's **Install Missing Models** button works server-side. Have user click it; the file lands in `$WORKSPACE/workspace/models/<dir>/`. **Do not download in your browser** — it'd save to the client machine, useless on a remote-accessed Spark. |
+| Workflow says "missing models" when loaded in UI | model file not on disk yet | TWO server-side paths: (a) **Manager → Install Missing Models** (top-bar button) uses Manager's `/v2/manager/queue/batch`. (b) **Workflow Overview → Errors → Missing Models → Download all / Download** in the new ComfyUI 0.20 sidebar; the bundled `aeon-server-side-downloads` JS extension intercepts those clicks and routes them through the same server-side API, then pops a toast confirming "Queueing N file(s) for server-side download". Both write to `$WORKSPACE/workspace/models/<dir>/` on the **server**. |
 | Workflow says "missing nodes" when loaded | needs a custom-node pack not bundled | Use the in-UI Manager top-bar button → **Install Missing Custom Nodes** (the new `comfyui-manager` pip pkg + `--enable-manager` wire this up). Do **not** pip-install custom nodes manually. |
+| User clicks "Download" in Workflow-Overview, file ends up on the client laptop instead of the server | the bundled `aeon-server-side-downloads` JS extension didn't load (browser cache, or pack got removed from `workspace/custom_nodes/`) | (1) Hard-refresh the browser (Ctrl-Shift-R / Cmd-Shift-R). (2) Verify the pack exists: `ls $WORKSPACE/workspace/custom_nodes/aeon-server-side-downloads/web/server-side-downloads.js`. (3) If missing, restart container: `docker compose restart comfyui` — the entrypoint re-seeds it from `/opt/bundled_custom_nodes/`. (4) Confirm with `curl -s http://<host>:8188/extensions/aeon-server-side-downloads/server-side-downloads.js \| head -5`. |
 | Workflow 09 (AceStep) says `ConnectionError ... Ollama` | Ollama sidecar isn't reachable from comfyui's container | `docker compose ps` should show `comfyui-ollama` healthy. If down, `docker compose up -d ollama`. The sidecar auto-pulls `gemma3:4b` on first start. |
 | Workflow 09 wants a different Ollama model | user's prompt-expansion preferences | Have user run `docker exec comfyui-ollama ollama pull <model-name>`, then in the workflow's `OllamaConnectivityV2` widget swap the model name from `gemma3:4b` to whatever they pulled. |
 | `docker compose up` says port 8188 in use | another ComfyUI / vLLM instance is bound | `docker stop vllm-aeon-ultimate-v2` (or whatever's on it) **after** asking the user. Spark has one GPU — only one heavy consumer at a time. |
@@ -367,7 +369,7 @@ $WORKSPACE/                                    # host-side
     ├── .ollama/                               # Ollama model cache (gemma3:4b lives here)
     ├── models/                                # ~285 GB on :latest after first start; empty on :slim
     │   ├── diffusion_models/  checkpoints/  text_encoders/  vae/  loras/  ...
-    ├── custom_nodes/                          # 14 bundled (seeded on first start) + Manager-installed
+    ├── custom_nodes/                          # 15 bundled (seeded on first start) + Manager-installed
     ├── output/                                # generated images / videos / audio
     ├── input/                                 # user's reference inputs
     ├── user/default/workflows/                # 8 seeded + anything the user saves

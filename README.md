@@ -248,7 +248,7 @@ behavior across NVIDIA platforms:
 | Transformers | 5.7.0 |
 | HuggingFace Hub | 1.12.0 + `hf-transfer` enabled |
 | GGUF runtime | `gguf` >= 0.13 + sentencepiece + protobuf |
-| **Total backend nodes registered** | **~1725** (Comfy core + 14 bundled custom-node packs) |
+| **Total backend nodes registered** | **~1725** (Comfy core + 15 bundled custom-node packs) |
 
 ### Bundled services
 
@@ -261,11 +261,16 @@ The compose stack ships **two services**:
 
 ### Server-side model downloads (not browser downloads!)
 
-`--enable-assets` and `--enable-manager` are on by default. When you load a workflow that's missing a model, ComfyUI shows an "install" button — clicking it triggers a **server-side** download via `huggingface_hub` (or aria2 if `COMFYUI_MANAGER_ARIA2_SERVER` is set). The file lands in your `./workspace/models/<directory>/` on the **server's** disk, never on the client browser. This is critical for remote-accessed Sparks where the browser is on a different machine.
+This image ships **two** independent paths that both route model downloads to the **server**:
 
-Sources of model URLs (read in this order):
+1. **Manager → Install Missing Models / Asset Browser** — uses the `comfyui-manager` pip pkg's `/v2/manager/queue/batch` endpoint. Downloads land in `./workspace/models/<directory>/` on the server.
+2. **Workflow Overview → Errors → Missing Models → Download all / Download** — core ComfyUI 0.20's new built-in panel. **By default, core ComfyUI fires `window.open(url)` here, which downloads to the client machine.** That's the wrong behavior for remote-accessed Sparks.
+   - This image bundles `aeon-server-side-downloads` (a JS-only custom-node pack) that intercepts those clicks and re-routes them through Manager's queue API. After the intercept, you'll see a toast: *"Queueing N file(s) for server-side download…"*. The file lands in your workspace volume on the server.
+   - Falls back transparently to the browser download if Manager isn't reachable, so it never breaks worse than upstream.
+
+`--enable-assets` and `--enable-manager` are on by default. Sources of model URLs (read in this order):
 1. `properties.models[]` arrays on workflow loader nodes (canonical Comfy templates have these wired)
-2. `download_models.py` runs at first start to pre-fetch the bundled set
+2. `download_models.py` runs at first start to pre-fetch the bundled set (`:latest` only)
 3. ComfyUI Manager's catalog (browse → install for any community model)
 
 ### Bundled ComfyUI custom node packs
@@ -286,6 +291,7 @@ Sources of model URLs (read in this order):
 | **ComfyUI-VideoHelperSuite** (Kosinkadink) | video I/O nodes |
 | **ComfyUI-Ollama** (stavsap) | Ollama LLM-prompting nodes (used by ACE-Step Ancient_Sufi workflow) |
 | **ComfyUI-Detail-Daemon** (Jonseed) | `MultiplySigmas`, `LyingSigmaSampler`, etc. |
+| **aeon-server-side-downloads** (in-tree) | JS-only extension that intercepts the new ComfyUI 0.20+ "Workflow Overview → Missing Models → Download" buttons and routes the download server-side via Manager's queue API, so files land in your workspace volume on the **server**, not in your browser on the **client** machine. Critical for remote-accessed Sparks. |
 
 ### Models auto-downloaded on first start (~285 GB)
 
@@ -346,7 +352,7 @@ Sources of model URLs (read in this order):
    NVIDIA recommends for pre-release silicon.
 3. **CUDA 13.0.2 toolchain** in the build image is the first NVCC release
    that emits sm_121 — CUDA 12.x literally cannot.
-4. **All 14 custom-node `requirements.txt` resolved at build time**, so
+4. **All 15 custom-node `requirements.txt` resolved at build time**, so
    you don't pay the dependency-resolve tax on every container start.
 
 ### Runtime tuning that ships by default
@@ -395,7 +401,7 @@ workspace/                           ← single host-mounted volume
 │   │   └── abliterated/             ← + huihui-ai full HF dirs
 │   ├── vae/  loras/  latent_upscale_models/
 │   └── ... all standard ComfyUI subdirs
-├── custom_nodes/                    ← 14 bundled + anything Manager adds
+├── custom_nodes/                    ← 15 bundled + anything Manager adds
 ├── output/                          ← generated images, videos, audio
 ├── input/                           ← reference inputs
 ├── user/default/workflows/          ← 8 pre-seeded workflows
@@ -510,8 +516,13 @@ publish your own variant under a different namespace:
 ```bash
 git clone https://github.com/AEON-7/comfyui-aeon-spark.git
 cd comfyui-aeon-spark
+
+# docker compose build tags the local image as
+# ghcr.io/aeon-7/comfyui-aeon-spark:latest (per docker-compose.yml).
+# Re-tag and push under your own namespace:
 docker compose build              # ~3 min on Spark with ccache hot
-docker tag comfyui-spark:cu130 ghcr.io/<your-namespace>/comfyui-aeon-spark:custom
+docker tag ghcr.io/aeon-7/comfyui-aeon-spark:latest \
+           ghcr.io/<your-namespace>/comfyui-aeon-spark:custom
 docker push ghcr.io/<your-namespace>/comfyui-aeon-spark:custom
 ```
 

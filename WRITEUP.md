@@ -76,8 +76,9 @@ This image solves that end-to-end:
 | **ComfyUI-VideoHelperSuite** (Kosinkadink) | video I/O nodes |
 | **ComfyUI-Ollama** (stavsap) | Ollama LLM-prompting nodes (used by Ancient_Sufi AceStep workflow) |
 | **ComfyUI-Detail-Daemon** (Jonseed) | `MultiplySigmas`, `LyingSigmaSampler`, `DetailDaemonGraphSigmasNode` |
+| **aeon-server-side-downloads** (in-tree, no backend nodes) | JS click-interceptor — routes "Workflow Overview → Missing Models → Download all / Download" through Manager's server-side install API instead of triggering a browser download. Critical for remote-accessed Sparks. |
 
-After first start, all 14 packs are editable inside the volume and
+After first start, all 15 packs are editable inside the volume and
 ComfyUI-Manager handles installs of any additional nodes.
 
 ### Models auto-downloaded on first start (~285 GB)
@@ -162,7 +163,7 @@ Total first-pull is ~285 GB; set `SKIP_ABLITERATED=1` to skip the two
    NVIDIA recommends for pre-release silicon.
 3. **CUDA 13.0.2 toolchain** in the build image is the first NVCC release
    that knows about sm_121 — CUDA 12.x simply cannot emit it.
-4. **All 14 custom node `requirements.txt` resolved at build time**, so
+4. **All 15 custom node `requirements.txt` resolved at build time**, so
    you don't pay the dependency-resolve tax on every container start.
 
 ### The runtime tuning that ships by default
@@ -209,7 +210,7 @@ workspace/                           ← single host-mounted volume
 │   ├── vae/  loras/  latent_upscale_models/
 │   ├── controlnet/  upscale_models/  embeddings/  ...
 │   └── (all standard ComfyUI subdirs)
-├── custom_nodes/                    ← 14 bundled + anything Manager adds
+├── custom_nodes/                    ← 15 bundled + anything Manager adds
 ├── output/                          ← generated images, videos, audio
 ├── input/                           ← reference inputs
 ├── user/default/workflows/          ← 8 pre-seeded workflows

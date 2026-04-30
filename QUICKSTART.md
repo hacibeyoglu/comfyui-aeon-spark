@@ -175,7 +175,7 @@ HF_HUB_ENABLE_HF_TRANSFER=1           # 3-5× faster HF downloads
 │   │   └── abliterated/     # huihui-ai full HF dirs
 │   ├── vae/  loras/  latent_upscale_models/
 │   └── ... all standard ComfyUI subdirs
-├── custom_nodes/            # 14 bundled + anything you install via Manager
+├── custom_nodes/            # 15 bundled + anything you install via Manager
 ├── output/                  # your generated images / videos / audio
 ├── input/                   # reference inputs
 └── user/default/workflows/  # 8 pre-seeded workflows + anything you save
