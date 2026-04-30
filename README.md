@@ -101,7 +101,8 @@ docker compose up -d && docker compose logs -f comfyui
 
 First start downloads ~285 GB of models. At ~95 MB/s expect ~50 minutes;
 look for `download summary: 35 ok, 0 failed` then `Launching ComfyUI on
-port 8188`.
+port 8188`. (If you skipped accepting the BFL Klein license you'll see
+`34 ok, 1 failed` — that's expected; workflow 08 needs Klein, others don't.)
 
 Then open `http://<spark-host>:8188`.
 
@@ -159,7 +160,7 @@ to take advantage of that:
 | Triton | torch.compile crashes on sm_121 | **Triton present, torch.compile explicitly disabled** so dynamo doesn't trip |
 | NVFP4 | not exposed | CUTLASS NVFP4 GEMMs via CUDA 13 — `*_fp4_mixed` weights take the accelerated path automatically |
 | Manager | manual ltdrdata install | Both **ltdrdata custom node** + the new **`comfyui-manager` pip pkg** with `--enable-manager` |
-| Models | bring your own | **28 artifacts pre-staged**: Flux 2, LTX 2.3, ACE-Step + abliterated swap-ins |
+| Models | bring your own | **35 artifacts auto-pulled** on first start (33 named files + 2 abliterated full-LLM snapshots): Flux 2, LTX 2.3, ACE-Step + abliterated swap-ins |
 
 ### What "optimized for DGX Spark" actually means here
 
@@ -500,7 +501,11 @@ upstream licenses (Apache 2.0 / MIT / FLUX Non-Commercial / etc).
 **The Flux 2 Dev model is under Black Forest Labs's Non-Commercial
 license — review before commercial use.**
 
-## Build / push reference
+## Build / push reference (only if you're forking)
+
+The published image at `ghcr.io/aeon-7/comfyui-aeon-spark` is the canonical
+artifact and is what `docker compose pull` grabs. If you want to fork and
+publish your own variant under a different namespace:
 
 ```bash
 git clone https://github.com/AEON-7/comfyui-aeon-spark.git
@@ -508,6 +513,14 @@ cd comfyui-aeon-spark
 docker compose build              # ~3 min on Spark with ccache hot
 docker tag comfyui-spark:cu130 ghcr.io/<your-namespace>/comfyui-aeon-spark:custom
 docker push ghcr.io/<your-namespace>/comfyui-aeon-spark:custom
+```
+
+For an x86 fork (RTX 5090/5080 consumer Blackwell):
+
+```bash
+DOCKER_BUILDKIT=1 docker buildx build --platform linux/amd64 \
+  --build-arg TORCH_CUDA_ARCH_LIST="12.0" \
+  -t ghcr.io/<your-namespace>/comfyui-aeon-spark:cu130-x86 .
 ```
 
 ---
