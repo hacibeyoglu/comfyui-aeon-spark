@@ -222,6 +222,14 @@ PRIMARY_FILES: list[tuple] = [
         "Qwen 3 8B FP8 mixed text encoder for Flux 2 Klein 9B (8.7GB)",
     ),
 
+    # ---------- LTX 2.3 distilled-1.1 fp8 (kijai/ComfyUI-PromptRelay workflow) ----------
+    (
+        "Kijai/LTX2.3_comfy",
+        "diffusion_models/ltx-2.3-22b-distilled-1.1_transformer_only_fp8_scaled.safetensors",
+        "diffusion_models",
+        "LTX 2.3 22B distilled-1.1 transformer-only FP8 scaled (25GB — kijai PromptRelay workflow)",
+    ),
+
     # ---------- ACE-Step v1.5 audio model (powers the Ancient_Sufi workflow) ----------
     (
         "Comfy-Org/ace_step_1.5_ComfyUI_files",

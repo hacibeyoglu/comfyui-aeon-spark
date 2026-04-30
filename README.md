@@ -52,7 +52,20 @@ cd comfyui-aeon-spark
 
 The script walks you through getting an HF token, accepting the gated-model licenses, picking your image variant, and launching the stack. It hides the token as you paste it (no echo to scrollback) and writes a `chmod 600` `.env`. Skip ahead to [What's bundled](#whats-bundled) once it finishes.
 
-If you'd rather do it manually, the same steps in long form:
+### Already deployed? Sync new workflows + models without redeploy
+
+```bash
+cd comfyui-aeon-spark
+./sync.sh
+```
+
+Pulls the latest image, refreshes the in-repo workflows and downloader script, shows a **diff** of what's new (workflows, model entries), and only fetches the delta. Idempotent — files already on disk are skipped, your Manager-installed nodes are preserved, your saved workflows untouched.
+
+Useful flags:
+- `./sync.sh --yes` — non-interactive (for agents / cron)
+- `./sync.sh --no-models` — refresh workflows & scripts but skip model downloads (saves bandwidth)
+
+If you'd rather do the initial deploy manually, the same steps in long form:
 
 ### 1. Get a HuggingFace token (5 min, free)
 
@@ -248,7 +261,7 @@ behavior across NVIDIA platforms:
 | Transformers | 5.7.0 |
 | HuggingFace Hub | 1.12.0 + `hf-transfer` enabled |
 | GGUF runtime | `gguf` >= 0.13 + sentencepiece + protobuf |
-| **Total backend nodes registered** | **~1725** (Comfy core + 15 bundled custom-node packs) |
+| **Total backend nodes registered** | **~1728** (Comfy core + 16 bundled custom-node packs) |
 
 ### Bundled services
 
@@ -292,6 +305,7 @@ This image ships **two** independent paths that both route model downloads to th
 | **ComfyUI-Ollama** (stavsap) | Ollama LLM-prompting nodes (used by ACE-Step Ancient_Sufi workflow) |
 | **ComfyUI-Detail-Daemon** (Jonseed) | `MultiplySigmas`, `LyingSigmaSampler`, etc. |
 | **aeon-server-side-downloads** (in-tree) | JS-only extension that intercepts the new ComfyUI 0.20+ "Workflow Overview → Missing Models → Download" buttons and routes the download server-side via Manager's queue API, so files land in your workspace volume on the **server**, not in your browser on the **client** machine. Critical for remote-accessed Sparks. |
+| **ComfyUI-PromptRelay** (kijai) | Timeline-based per-second prompt control for video — change descriptions throughout the sequence (used by `10_ltx2.3_prompt_relay`). |
 
 ### Models auto-downloaded on first start (~285 GB)
 
@@ -335,6 +349,7 @@ This image ships **two** independent paths that both route model downloads to th
 | `07_ltx2.3_id_lora.json` | Comfy canonical LTX-2.3 with identity-LoRA wiring |
 | `08_flux2_klein_9b_text_to_image.json` | Flux 2 Klein 9B variant t2i |
 | `09_acestep_ancient_sufi_xl.json` | ACE-Step v1.5 XL Turbo audio with Ollama prompt-expansion |
+| `10_ltx2.3_prompt_relay.json` | LTX 2.3 22B distilled-1.1 fp8 + Kijai's [ComfyUI-PromptRelay](https://github.com/kijai/ComfyUI-PromptRelay) — timeline-based per-second prompt control for video |
 
 ---
 
@@ -352,7 +367,7 @@ This image ships **two** independent paths that both route model downloads to th
    NVIDIA recommends for pre-release silicon.
 3. **CUDA 13.0.2 toolchain** in the build image is the first NVCC release
    that emits sm_121 — CUDA 12.x literally cannot.
-4. **All 15 custom-node `requirements.txt` resolved at build time**, so
+4. **All 16 custom-node `requirements.txt` resolved at build time**, so
    you don't pay the dependency-resolve tax on every container start.
 
 ### Runtime tuning that ships by default
@@ -401,7 +416,7 @@ workspace/                           ← single host-mounted volume
 │   │   └── abliterated/             ← + huihui-ai full HF dirs
 │   ├── vae/  loras/  latent_upscale_models/
 │   └── ... all standard ComfyUI subdirs
-├── custom_nodes/                    ← 15 bundled + anything Manager adds
+├── custom_nodes/                    ← 16 bundled + anything Manager adds
 ├── output/                          ← generated images, videos, audio
 ├── input/                           ← reference inputs
 ├── user/default/workflows/          ← 8 pre-seeded workflows

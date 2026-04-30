@@ -35,7 +35,7 @@ This image solves that end-to-end:
 | Triton | torch.compile crashes on sm_121 | **Triton present, torch.compile explicitly disabled** so dynamo doesn't trip |
 | NVFP4 | not exposed | CUTLASS NVFP4 GEMMs via CUDA 13 — `*_fp4_mixed` weights take the accelerated path automatically |
 | Manager | manual ltdrdata install | Both **ltdrdata custom node** + the new **`comfyui-manager` pip pkg** with `--enable-manager` |
-| Models | bring your own | **28 artifacts pre-staged**: Flux 2, LTX 2.3, ACE-Step + abliterated swap-ins |
+| Models | bring your own | **36 artifacts auto-pulled on first start (34 named files + 2 huihui-ai abliterated full-LLM snapshots)**: Flux 2, LTX 2.3, ACE-Step + abliterated swap-ins |
 
 ---
 
@@ -56,7 +56,7 @@ This image solves that end-to-end:
 | Transformers | 5.7.0 |
 | HuggingFace Hub | 1.12.0 + `hf-transfer` enabled |
 | GGUF runtime | `gguf` >= 0.13 + sentencepiece + protobuf |
-| **Total backend nodes registered** | **~1725** (Comfy core + 12 bundled custom node packs) |
+| **Total backend nodes registered** | **~1728** (Comfy core + 16 bundled custom node packs) |
 
 ### Bundled ComfyUI custom nodes
 
@@ -77,8 +77,9 @@ This image solves that end-to-end:
 | **ComfyUI-Ollama** (stavsap) | Ollama LLM-prompting nodes (used by Ancient_Sufi AceStep workflow) |
 | **ComfyUI-Detail-Daemon** (Jonseed) | `MultiplySigmas`, `LyingSigmaSampler`, `DetailDaemonGraphSigmasNode` |
 | **aeon-server-side-downloads** (in-tree, no backend nodes) | JS click-interceptor — routes "Workflow Overview → Missing Models → Download all / Download" through Manager's server-side install API instead of triggering a browser download. Critical for remote-accessed Sparks. |
+| **ComfyUI-PromptRelay** (kijai) | Timeline-based per-second prompt control for video — change descriptions throughout the sequence (used by `10_ltx2.3_prompt_relay`). |
 
-After first start, all 15 packs are editable inside the volume and
+After first start, all 16 packs are editable inside the volume and
 ComfyUI-Manager handles installs of any additional nodes.
 
 ### Models auto-downloaded on first start (~285 GB)
@@ -146,6 +147,7 @@ Total first-pull is ~285 GB; set `SKIP_ABLITERATED=1` to skip the two
 | `07_ltx2.3_id_lora.json` | Comfy canonical LTX-2.3 with identity-LoRA wiring |
 | `08_flux2_klein_9b_text_to_image.json` | Flux 2 Klein 9B variant t2i |
 | `09_acestep_ancient_sufi_xl.json` | ACE-Step v1.5 XL Turbo audio generation with Ollama-driven prompt expansion |
+| `10_ltx2.3_prompt_relay.json` | LTX 2.3 22B distilled-1.1 fp8 + Kijai's [ComfyUI-PromptRelay](https://github.com/kijai/ComfyUI-PromptRelay) — per-second timeline-based prompt control for video, change descriptions throughout the sequence |
 
 ---
 
@@ -163,7 +165,7 @@ Total first-pull is ~285 GB; set `SKIP_ABLITERATED=1` to skip the two
    NVIDIA recommends for pre-release silicon.
 3. **CUDA 13.0.2 toolchain** in the build image is the first NVCC release
    that knows about sm_121 — CUDA 12.x simply cannot emit it.
-4. **All 15 custom node `requirements.txt` resolved at build time**, so
+4. **All 16 custom node `requirements.txt` resolved at build time**, so
    you don't pay the dependency-resolve tax on every container start.
 
 ### The runtime tuning that ships by default
@@ -210,7 +212,7 @@ workspace/                           ← single host-mounted volume
 │   ├── vae/  loras/  latent_upscale_models/
 │   ├── controlnet/  upscale_models/  embeddings/  ...
 │   └── (all standard ComfyUI subdirs)
-├── custom_nodes/                    ← 15 bundled + anything Manager adds
+├── custom_nodes/                    ← 16 bundled + anything Manager adds
 ├── output/                          ← generated images, videos, audio
 ├── input/                           ← reference inputs
 ├── user/default/workflows/          ← 8 pre-seeded workflows

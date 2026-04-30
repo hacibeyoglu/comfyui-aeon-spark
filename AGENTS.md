@@ -315,6 +315,7 @@ If 4.6 reports a 403 in the download log, the user hasn't accepted one of the ga
   | `07_ltx2.3_id_lora` | LTX 2.3 with identity LoRA |
   | `08_flux2_klein_9b_text_to_image` | Flux 2 Klein 9B variant |
   | `09_acestep_ancient_sufi_xl` | ACE-Step audio (with Ollama prompt expansion) |
+  | `10_ltx2.3_prompt_relay` | LTX 2.3 distilled-1.1 fp8 + Kijai PromptRelay timeline-based per-second prompt control for video |
 - ComfyUI-Manager wired and clickable in the top bar (for installing additional nodes/models server-side).
 - **Workflow Overview → Missing Models → Download** routes through the bundled `aeon-server-side-downloads` extension — clicks go server-side via Manager's queue API, file lands in `$WORKSPACE/workspace/models/`, never on the client browser.
 - Persistent workspace at `$WORKSPACE/workspace/` — survives container recreations.
@@ -369,7 +370,7 @@ $WORKSPACE/                                    # host-side
     ├── .ollama/                               # Ollama model cache (gemma3:4b lives here)
     ├── models/                                # ~285 GB on :latest after first start; empty on :slim
     │   ├── diffusion_models/  checkpoints/  text_encoders/  vae/  loras/  ...
-    ├── custom_nodes/                          # 15 bundled (seeded on first start) + Manager-installed
+    ├── custom_nodes/                          # 16 bundled (seeded on first start) + Manager-installed
     ├── output/                                # generated images / videos / audio
     ├── input/                                 # user's reference inputs
     ├── user/default/workflows/                # 8 seeded + anything the user saves
@@ -404,15 +405,27 @@ ComfyUI loaders auto-rescan when their dropdown is opened.
 
 Use the in-UI Manager. It writes to `$WORKSPACE/workspace/custom_nodes/<pack>/` and ComfyUI will pick it up after a UI-triggered reload.
 
-### 9.4 Update ComfyUI itself
+### 9.4 Update ComfyUI itself / pull new workflows + models
 
 ```bash
 cd "$WORKSPACE"
-docker compose pull
-docker compose up -d
+./sync.sh --yes              # incremental: pulls latest image, refreshes
+                             # workflows/, runs idempotent downloader on
+                             # any new entries — preserves user volume
 ```
 
-The `:latest` tag advances when this repo cuts a new release.
+`sync.sh` does:
+1. `docker compose pull` (pulls latest image; new bundled custom nodes come this way)
+2. `git pull` (or shallow re-clone) the repo so `workflows/` + `download_models.py` + `setup.sh` + `entrypoint.sh` are current
+3. Diffs against the user's volume — reports new workflows, new model-download entries, image change
+4. Recreates the container — entrypoint's idempotent seeders ADD missing files only, never overwrite or delete user content
+5. Tails the boot log filtered to "Seeding…", "⤓", "✓ done:", "download summary" so the agent can parse what landed
+
+Flags useful in agent contexts:
+- `--yes` — non-interactive
+- `--no-models` — refresh code/workflows but skip the downloader (for low-bandwidth or pre-vetted-only workflows)
+
+The `:latest` tag advances when this repo cuts a new release. Run `./sync.sh --yes` periodically (cron, manual, or agent-triggered) to stay current.
 
 ### 9.5 Add an Ollama model for prompt-expansion workflows
 

@@ -93,7 +93,7 @@ docker compose logs -f comfyui
 ```
 
 First start downloads ~285 GB of models. At ~95 MB/s on Spark's 10 GbE
-expect ~50 minutes; you'll see a `download summary: 28 ok, 0 failed`
+expect ~50 minutes; you'll see a `download summary: 35 ok, 0 failed`
 line followed by `Launching ComfyUI on port 8188`.
 
 Open the UI:
@@ -118,6 +118,7 @@ If `<spark-host>` is the box itself: `http://localhost:8188`.
 | **07_ltx2.3_id_lora** | LTX 2.3 with identity-LoRA wiring |
 | **08_flux2_klein_9b_text_to_image** | Flux 2 Klein 9B variant |
 | **09_acestep_ancient_sufi_xl** | ACE-Step v1.5 XL Turbo audio with Ollama prompt-expansion |
+| **10_ltx2.3_prompt_relay** | LTX 2.3 distilled-1.1 fp8 + Kijai PromptRelay timeline-based per-second prompt control for video |
 
 ---
 
@@ -175,10 +176,10 @@ HF_HUB_ENABLE_HF_TRANSFER=1           # 3-5× faster HF downloads
 │   │   └── abliterated/     # huihui-ai full HF dirs
 │   ├── vae/  loras/  latent_upscale_models/
 │   └── ... all standard ComfyUI subdirs
-├── custom_nodes/            # 15 bundled + anything you install via Manager
+├── custom_nodes/            # 16 bundled + anything you install via Manager
 ├── output/                  # your generated images / videos / audio
 ├── input/                   # reference inputs
-└── user/default/workflows/  # 8 pre-seeded workflows + anything you save
+└── user/default/workflows/  # 9 pre-seeded workflows + anything you save
 ```
 
 ### Adding more workflows later
