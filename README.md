@@ -42,6 +42,18 @@ Both variants ship the same code, custom nodes, and workflows. The difference is
 
 ## Quickstart
 
+### Easiest: interactive setup (recommended)
+
+```bash
+git clone https://github.com/AEON-7/comfyui-aeon-spark.git
+cd comfyui-aeon-spark
+./setup.sh
+```
+
+The script walks you through getting an HF token, accepting the gated-model licenses, picking your image variant, and launching the stack. It hides the token as you paste it (no echo to scrollback) and writes a `chmod 600` `.env`. Skip ahead to [What's bundled](#whats-bundled) once it finishes.
+
+If you'd rather do it manually, the same steps in long form:
+
 ### 1. Get a HuggingFace token (5 min, free)
 
 Required for `:latest` (auto-download). Optional for `:slim`.

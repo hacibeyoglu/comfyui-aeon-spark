@@ -93,7 +93,9 @@ Before running anything that consumes time/bandwidth, confirm:
 
 ## 3 · One-shot deployment
 
-Plug the user's values into the variables below and run as a single block.
+**Preferred path: have the user run `./setup.sh`.** It interactively walks them through HF token, gated-license accepts, variant choice (`:latest` vs `:slim`), port, `SKIP_ABLITERATED`, and launch. It hides the token as they paste it and writes a `chmod 600` `.env`.
+
+If they're not at a TTY (e.g. you're scripting it remotely), use the heredoc block below instead.
 
 ```bash
 # ── parameters ──────────────────────────────────────────────────────────────

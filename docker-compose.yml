@@ -53,7 +53,7 @@ services:
       dockerfile: Dockerfile
       args:
         BUILD_JOBS: "${BUILD_JOBS:-20}"
-    image: comfyui-spark:cu130
+    image: ghcr.io/aeon-7/comfyui-aeon-spark:${IMAGE_TAG:-latest}
     container_name: comfyui-spark
     hostname: comfyui-spark
 
