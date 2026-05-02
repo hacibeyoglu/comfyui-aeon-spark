@@ -72,13 +72,26 @@ services:
       - "${COMFYUI_PORT:-8188}:8188"
 
     environment:
-      # ComfyUI flags — optimized for sm_121a with SageAttention + bf16
+      # ComfyUI flags — optimized for sm_121a with SageAttention + native FP8.
+      #
+      # Precision matrix (matches the model files download_models.py pulls):
+      #   --fp8_e4m3fn-unet : flux2_dev_fp8mixed.safetensors is FP8-mixed e4m3fn.
+      #                       Loading it natively keeps it ~35.5 GB (vs ~63 GB
+      #                       if cast to BF16) and uses Blackwell's hardware FP8
+      #                       acceleration (~30% faster sampling on sm_121a).
+      #   --bf16-vae        : flux2-vae.safetensors is BF16 — match the file dtype.
+      #   --bf16-text-enc   : mistral_3_small_flux2_bf16.safetensors is BF16 —
+      #                       match the file dtype. (NVFP4 alt also shipped for
+      #                       users who want the smaller 12.3 GB encoder.)
+      #
+      # If you swap in a true BF16 UNet (e.g. flux2_dev_bf16.safetensors), change
+      # --fp8_e4m3fn-unet back to --bf16-unet. The flag must match what's on disk.
       COMFYUI_PORT: "8188"
       COMFYUI_FLAGS: >-
         --listen 0.0.0.0
         --port 8188
         --use-sage-attention
-        --bf16-unet --bf16-vae --bf16-text-enc
+        --fp8_e4m3fn-unet --bf16-vae --bf16-text-enc
         --disable-pinned-memory
         --reserve-vram 2.0
         --preview-method auto
