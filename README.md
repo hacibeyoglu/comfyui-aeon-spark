@@ -14,6 +14,78 @@ docker pull ghcr.io/aeon-7/comfyui-aeon-spark:latest          # auto-downloads w
 docker pull ghcr.io/aeon-7/comfyui-aeon-spark:slim            # no auto-download — pick models via UI
 ```
 
+---
+
+## 🚀 Fastest path — 4 steps, ~50 minutes
+
+**Run these in order on a DGX Spark host. No prior knowledge needed.**
+
+### Step 1: Get a HuggingFace token (5 min, free)
+
+Open in browser: **https://huggingface.co/settings/tokens**
+Click **"New token"** → name it `comfyui-aeon-spark` → scope = **Read** → **Create token** → copy it.
+Save it for Step 3. Token starts with `hf_`.
+
+### Step 2: Accept 3 gated model licenses (3 click-throughs, free)
+
+While logged in to HuggingFace, open each link below and click **"Agree and access"**:
+
+1. https://huggingface.co/black-forest-labs/FLUX.2-dev
+2. https://huggingface.co/black-forest-labs/FLUX.2-klein-base-9b-fp8
+3. https://huggingface.co/google/gemma-3-12b-pt
+
+Without this, the downloader will fail with `403 Forbidden` on those repos.
+
+### Step 3: Clone + run the interactive installer
+
+```bash
+git clone https://github.com/AEON-7/comfyui-aeon-spark.git
+cd comfyui-aeon-spark
+./setup.sh
+```
+
+When prompted: paste the HF token from Step 1. Choose `:latest` (default) for auto-download. The script writes `.env` (chmod 600), launches `docker compose up`, and starts the model download.
+
+### Step 4: Wait for first-start download (~45 min, 285 GB)
+
+The container streams its progress to its log:
+
+```bash
+docker logs -f comfyui-spark
+```
+
+When you see `Launching ComfyUI on port 8188` followed by no errors, the stack is up.
+
+### Step 5: Open ComfyUI
+
+Browser: **`http://<host-ip>:8188`** (use `localhost` if running on your local machine).
+
+That's it. Generate an image, generate a video, generate music. Default workflows are pre-loaded under "Workflows" in the left sidebar.
+
+---
+
+## 🆘 Troubleshooting — symptom → exact fix
+
+If something goes wrong, find the symptom in the table below and run the fix. Most problems have one-line solutions.
+
+| Symptom | Likely cause | Exact fix |
+|---|---|---|
+| `setup.sh: command not found` or `Permission denied` | Script not executable | `chmod +x setup.sh sync.sh && ./setup.sh` |
+| `docker: command not found` | Docker Engine not installed | `curl -fsSL https://get.docker.com \| sh && sudo systemctl enable --now docker` |
+| `Error response from daemon: could not select device driver "nvidia"` | NVIDIA Container Toolkit missing | `sudo apt install -y nvidia-container-toolkit && sudo systemctl restart docker` |
+| `403 Forbidden` while downloading | HF gated models not accepted | Redo Step 2 above. Click "Agree and access" on each gated repo while logged in as the same HF user whose token you're using. |
+| `401 Unauthorized` while downloading | HF token wrong, expired, or missing Read scope | Regenerate token at https://huggingface.co/settings/tokens with Read scope, then `nano .env`, paste new token, `docker compose restart` |
+| ComfyUI unreachable on `:8188` from another machine | Firewall blocking port | `sudo ufw allow 8188/tcp` (or open in cloud provider's security group) |
+| `OOM` / out-of-memory during generation | Too many models loaded simultaneously | Click "Free memory" in ComfyUI's right sidebar. If it persists, `docker compose restart`. |
+| `disk full` mid-download | Less than 350 GB free on workspace volume | `df -h` to confirm, then either free space or set `COMFY_WORKSPACE` in `.env` to a path on a larger disk and `docker compose down && docker compose up -d` |
+| Model download stalls at 0% for >5 minutes | HF Hub rate-limited or your network blocked | `docker logs comfyui-spark \| tail` to see exact URL, retry with `docker compose restart` |
+| Want to update / get new workflows / new models | You already deployed once | **Run `./sync.sh`**. Do NOT re-clone or re-run `setup.sh` — they would re-download everything. `sync.sh` only fetches the delta. |
+| Want to start completely fresh (different host, etc.) | Need clean state | `docker compose down -v && rm -rf workspace && ./setup.sh` (note: `-v` deletes the workspace volume — your downloaded models will be re-fetched) |
+
+For deeper agent-level troubleshooting, see [§6 in AGENTS.md](AGENTS.md#6--common-failure-patterns-and-exact-fixes).
+
+---
+
 ### Tag matrix
 
 | Tag | Image size | What's inside | When to use |

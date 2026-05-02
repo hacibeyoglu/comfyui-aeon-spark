@@ -6,6 +6,49 @@
 
 ---
 
+## 🤖 AGENT QUICK REFERENCE CARD
+
+**Read this first. The rest of the file is detail.**
+
+### Decision tree (top to bottom — first match wins)
+
+| If user says… | Then do… |
+|---|---|
+| "Install / set up / deploy this on my DGX Spark" | Run `./setup.sh` from the cloned repo. Walk them through it. |
+| "Update / get the latest / sync" | Run `./sync.sh` from their existing repo dir. **Do NOT re-deploy.** |
+| "It's broken / something's wrong" | Go to **§6 Common failure patterns** and pattern-match the symptom. Don't speculate. |
+| "Add a new model / workflow / custom node" | Go to **§9 Customizing**. Each subsection has the exact commands. |
+| "Something about Flux 2 / LTX 2.3 / ACE-Step / model files" | Go to **§4.6 Model files on disk** for what's where. |
+| "Run on something other than DGX Spark" | Go to **§10 Cross-platform fallback**. Set their expectations: this image is sm_121a-tuned. |
+
+### Top 5 invariants — never violate
+
+1. **Never re-clone or re-run `setup.sh` on an existing deployment.** Use `./sync.sh`. Re-deploying re-downloads ~285 GB.
+2. **Never edit files inside the running container.** All persistent config lives in the `workspace/` volume on the host. See **§8 Where state lives**.
+3. **Never strip the `--use-sage-attention` flag.** SageAttention v3 is the entire point of this image's perf advantage on sm_121a.
+4. **Never change `--fp8_e4m3fn-unet` to `--bf16-unet` unless the user has swapped to a true BF16 UNet file** (e.g., `flux2_dev_bf16.safetensors`). The flag must match the on-disk weight dtype.
+5. **Never push commits, tags, or images to AEON-7's GHCR namespace** unless the user explicitly grants you that permission for this session.
+
+### Critical environment values (from `.env`)
+
+| Variable | Required? | Where it comes from |
+|---|---|---|
+| `HF_TOKEN` | Required for `:latest` | https://huggingface.co/settings/tokens (Read scope) |
+| `IMAGE_TAG` | Optional, default `latest` | `latest` (auto-download) or `slim` (manual install) |
+| `COMFYUI_PORT` | Optional, default `8188` | Pick a free TCP port on the host |
+| `COMFY_WORKSPACE` | Optional, default `./workspace` | Where the 285 GB of models will live |
+| `BUILD_JOBS` | Optional, default `20` | Compile parallelism (only matters on `docker compose build`) |
+
+### Stop conditions — bail out and surface to user
+
+- ⛔ Hardware check fails (not GB10, not sm_121a, not aarch64, not Linux): see **§10**
+- ⛔ Disk space < 350 GB free: tell user, don't continue
+- ⛔ Existing container running but no `.env` found: ask user where their deployment dir is
+- ⛔ Two `setup.sh` runs in a row produced different results: something is racing — escalate
+- ⛔ Any "do not do this" item from invariants above almost happened: stop, surface
+
+---
+
 ## ▶ FIRST CHECK: fresh deploy or existing deploy?
 
 **Don't blindly redeploy.** If the user has already installed this stack, doing a fresh deploy means re-downloading up to ~285 GB of model weights and forfeiting any nodes/workflows they've added via Manager. Use the incremental `sync.sh` path instead.
