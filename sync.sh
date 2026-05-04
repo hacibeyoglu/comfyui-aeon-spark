@@ -219,9 +219,15 @@ if [ "$SKIP_MODELS" = "1" ]; then
     SKIP_MODEL_DOWNLOAD=1 docker compose up -d --force-recreate 2>&1 | tail -5
     echo "${G}✓${D} skipped model downloader (--no-models)"
 else
-    # Don't delete the .models_seeded sentinel — the downloader is idempotent
-    # by basename, so it'll skip files already on disk and only pull new entries.
-    docker compose up -d --force-recreate 2>&1 | tail -5
+    # The entrypoint short-circuits the downloader once the .models_seeded
+    # sentinel exists (set after first-start). Without forcing it here, sync's
+    # newly-pulled download_models.py entries silently never run on subsequent
+    # boots — the bug that left the May 4 LTX 2.3 LoRAs unfetched on every
+    # recreate. We explicitly force the downloader on every sync. The
+    # downloader itself is idempotent (per-file basename check via huggingface_hub)
+    # so already-present files skip in milliseconds while genuinely new
+    # entries actually fetch.
+    FORCE_MODEL_DOWNLOAD=1 docker compose up -d --force-recreate 2>&1 | tail -5
 fi
 
 # ── Step 6: stream the diff-relevant log lines ──────────────────────────────

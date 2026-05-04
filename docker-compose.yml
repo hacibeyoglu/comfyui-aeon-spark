@@ -131,8 +131,18 @@ services:
     # This is the local source of truth — models, custom_nodes, output, input,
     # user (settings + workflows), temp all live here so nothing is lost on
     # container rebuild/recreate.
+    #
+    # Plus bind-mount the host repo's entrypoint.sh + download_models.py over
+    # the image-baked copies. Without these mounts, `git pull` updates to
+    # those scripts (e.g. new model entries) are invisible to the running
+    # container until a fresh image is built — sync.sh's git-pull becomes a
+    # silent no-op for downloader changes. With the mounts, sync.sh's
+    # `git pull → docker compose up -d --force-recreate` cycle correctly
+    # picks up the latest scripts on every recreate.
     volumes:
       - ./workspace:/workspace/ComfyUI
+      - ./entrypoint.sh:/usr/local/bin/entrypoint.sh:ro
+      - ./download_models.py:/usr/local/bin/download_models.py:ro
 
     shm_size: "32gb"
     ipc: host
