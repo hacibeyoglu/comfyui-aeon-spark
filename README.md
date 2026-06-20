@@ -625,7 +625,7 @@ DOCKER_BUILDKIT=1 docker buildx build --platform linux/amd64 \
 
 ---
 
-*Built and maintained for the [DGX Spark](https://www.nvidia.com/en-us/products/workstations/dgx-spark/) AI workstation. Pairs naturally with [vllm-aeon-ultimate](https://github.com/AEON-7/Qwen3.6-NVFP4-DFlash) for LLM serving on the same hardware.*
+*Built and maintained for the [DGX Spark](https://www.nvidia.com/en-us/products/workstations/dgx-spark/) AI workstation. Pairs naturally with [vllm-aeon-ultimate](https://github.com/AEON-7/Qwen3.6-35B-A3B-heretic-NVFP4-DFlash) for LLM serving on the same hardware.*
 
 ---
 
