@@ -14,8 +14,8 @@
 //     models panel (matched by surrounding text + structure)
 //   - Pulls the model URL+directory metadata from the workflow's
 //     properties.models[] arrays on each loader node
-//   - POSTs to /v2/manager/queue/batch with install_model action
-//   - Calls /v2/manager/queue/start to drain the queue
+//   - POSTs each model to /aeon/download_model (our own endpoint in __init__.py)
+//   - Falls back to Manager's /manager/queue/install_model if ours is absent
 //   - Shows a small toast confirming the file is going to the server volume
 //
 // If the server-side route isn't reachable for any reason, it falls back
@@ -95,25 +95,72 @@ function collectMissingModelsFromWorkflow() {
     return out;
 }
 
-// POST to Manager's batch install API; falls back gracefully on error.
+// POST to our own /aeon/download_model endpoint (registered in __init__.py).
+// Falls back to Manager's /manager/queue/install_model if ours returns 404.
 async function queueServerSideInstall(models) {
     if (!models?.length) return { ok: false, reason: "no models" };
 
-    try {
-        const res = await api.fetchApi("/v2/manager/queue/batch", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ install_model: models }),
-        });
-        if (!res.ok) {
-            return { ok: false, reason: `HTTP ${res.status}` };
+    // Try our own endpoint first (no whitelist, honours HF_TOKEN server-side).
+    let useAeon = true;
+    let failed = 0;
+
+    for (const m of models) {
+        try {
+            const res = await api.fetchApi("/aeon/download_model", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    url: m.url,
+                    filename: m.name,
+                    directory: m.directory,
+                }),
+            });
+            if (res.status === 404) {
+                // Our endpoint isn't registered (old __init__.py) — fall back.
+                useAeon = false;
+                break;
+            }
+            if (!res.ok) {
+                console.warn(LOG_PREFIX, `HTTP ${res.status} for ${m.name}`);
+                failed++;
+            }
+        } catch (e) {
+            console.warn(LOG_PREFIX, `request failed for ${m.name}:`, e);
+            failed++;
         }
-        // Kick the queue processor
-        await api.fetchApi("/v2/manager/queue/start", { method: "POST" });
-        return { ok: true, count: models.length };
-    } catch (e) {
-        return { ok: false, reason: String(e) };
     }
+
+    if (!useAeon) {
+        // Fallback: Manager's single-install endpoint (may 400 if model not in
+        // Manager's whitelist, but worth trying).
+        console.warn(LOG_PREFIX, "/aeon/download_model not found — trying Manager fallback");
+        for (const m of models) {
+            try {
+                const res = await api.fetchApi("/manager/queue/install_model", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        filename: m.name,
+                        url: m.url,
+                        save_path: m.directory || "default",
+                        type: m.directory || "checkpoints",
+                        base: "Other",
+                    }),
+                });
+                if (!res.ok) failed++;
+            } catch (e) {
+                failed++;
+            }
+        }
+        if (failed < models.length) {
+            await api.fetchApi("/manager/queue/start", { method: "POST" }).catch(() => {});
+        }
+    }
+
+    if (failed === models.length) {
+        return { ok: false, reason: `all ${failed} request(s) failed` };
+    }
+    return { ok: true, count: models.length - failed };
 }
 
 // Quick toast helper — uses ComfyUI's app.extensionManager if available,

@@ -454,7 +454,7 @@ $WORKSPACE/                                    # host-side
     ├── .ollama/                               # Ollama model cache (gemma3:4b lives here)
     ├── models/                                # ~285 GB on :latest after first start; empty on :slim
     │   ├── diffusion_models/  checkpoints/  text_encoders/  vae/  loras/  ...
-    ├── custom_nodes/                          # 16 bundled (seeded on first start) + Manager-installed
+    ├── custom_nodes/                          # 17 bundled (seeded on first start) + Manager-installed
     ├── output/                                # generated images / videos / audio
     ├── input/                                 # user's reference inputs
     ├── user/default/workflows/                # 8 seeded + anything the user saves

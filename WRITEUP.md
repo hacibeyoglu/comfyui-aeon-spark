@@ -56,7 +56,7 @@ This image solves that end-to-end:
 | Transformers | 5.7.0 |
 | HuggingFace Hub | 1.12.0 + `hf-transfer` enabled |
 | GGUF runtime | `gguf` >= 0.13 + sentencepiece + protobuf |
-| **Total backend nodes registered** | **~1728** (Comfy core + 16 bundled custom node packs) |
+| **Total backend nodes registered** | **~1728** (Comfy core + 17 bundled custom node packs) |
 
 ### Bundled ComfyUI custom nodes
 
@@ -165,7 +165,7 @@ Total first-pull is ~285 GB; set `SKIP_ABLITERATED=1` to skip the two
    NVIDIA recommends for pre-release silicon.
 3. **CUDA 13.0.2 toolchain** in the build image is the first NVCC release
    that knows about sm_121 — CUDA 12.x simply cannot emit it.
-4. **All 16 custom node `requirements.txt` resolved at build time**, so
+4. **All 17 custom node `requirements.txt` resolved at build time**, so
    you don't pay the dependency-resolve tax on every container start.
 
 ### The runtime tuning that ships by default
@@ -212,7 +212,7 @@ workspace/                           ← single host-mounted volume
 │   ├── vae/  loras/  latent_upscale_models/
 │   ├── controlnet/  upscale_models/  embeddings/  ...
 │   └── (all standard ComfyUI subdirs)
-├── custom_nodes/                    ← 16 bundled + anything Manager adds
+├── custom_nodes/                    ← 17 bundled + anything Manager adds
 ├── output/                          ← generated images, videos, audio
 ├── input/                           ← reference inputs
 ├── user/default/workflows/          ← 8 pre-seeded workflows

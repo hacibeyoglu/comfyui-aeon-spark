@@ -8,7 +8,7 @@
 # zero embedded weights, this variant makes the user the sole party who
 # accepts each model's license at HuggingFace.
 #
-# What you get: ComfyUI + 14 custom node packs + 8 workflows + the asset
+# What you get: ComfyUI + 17 custom node packs + 8 workflows + the asset
 # system + Manager.  When you load a workflow with a missing model, the
 # in-UI "Install Missing Models" button downloads it server-side using
 # YOUR HF token under YOUR account, recording your license acceptance.
@@ -21,7 +21,7 @@ ENV SKIP_MODEL_DOWNLOAD=1
 ENV SKIP_ABLITERATED=1
 
 LABEL org.opencontainers.image.title="ComfyUI · AEON DGX Spark · base (no embedded weights)" \
-      org.opencontainers.image.description="ComfyUI for NVIDIA DGX Spark (GB10 / Blackwell / sm_121a) with CUDA 13 + SageAttention v3 + 14 custom-node packs + 8 workflows. NO MODELS EMBEDDED OR AUTO-DOWNLOADED. Use the in-UI 'Install Missing Models' to pull each model under your own HuggingFace account, accepting each license individually. Recommended when license compliance matters." \
+      org.opencontainers.image.description="ComfyUI for NVIDIA DGX Spark (GB10 / Blackwell / sm_121a) with CUDA 13 + SageAttention v3 + 17 custom-node packs + 8 workflows. NO MODELS EMBEDDED OR AUTO-DOWNLOADED. Use the in-UI 'Install Missing Models' to pull each model under your own HuggingFace account, accepting each license individually. Recommended when license compliance matters." \
       org.opencontainers.image.source="https://github.com/AEON-7/comfyui-aeon-spark" \
       org.opencontainers.image.documentation="https://github.com/AEON-7/comfyui-aeon-spark/blob/main/README.md" \
       org.opencontainers.image.version="bf16-flux2-ltx2.3-base" \

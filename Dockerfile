@@ -185,7 +185,8 @@ RUN mkdir -p ${BUNDLED_NODES} && cd ${BUNDLED_NODES} && \
     git clone --depth=1 https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite.git && \
     git clone --depth=1 https://github.com/stavsap/comfyui-ollama.git ComfyUI-Ollama && \
     git clone --depth=1 https://github.com/Jonseed/ComfyUI-Detail-Daemon.git && \
-    git clone --depth=1 https://github.com/kijai/ComfyUI-PromptRelay.git
+    git clone --depth=1 https://github.com/kijai/ComfyUI-PromptRelay.git && \
+    git clone --depth=1 https://github.com/EricRollei/PDF-Tools.git
 
 # In-tree extension pack: routes the new ComfyUI 0.20+ Workflow-Overview
 # "Missing Models -> Download all/Download" buttons through the server-side

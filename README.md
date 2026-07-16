@@ -335,7 +335,7 @@ behavior across NVIDIA platforms:
 | Transformers | 5.7.0 |
 | HuggingFace Hub | 1.12.0 + `hf-transfer` enabled |
 | GGUF runtime | `gguf` >= 0.13 + sentencepiece + protobuf |
-| **Total backend nodes registered** | **~1728** (Comfy core + 16 bundled custom-node packs) |
+| **Total backend nodes registered** | **~1728** (Comfy core + 17 bundled custom-node packs) |
 
 ### Bundled services
 
@@ -380,6 +380,7 @@ This image ships **two** independent paths that both route model downloads to th
 | **ComfyUI-Detail-Daemon** (Jonseed) | `MultiplySigmas`, `LyingSigmaSampler`, etc. |
 | **aeon-server-side-downloads** (in-tree) | JS-only extension that intercepts the new ComfyUI 0.20+ "Workflow Overview → Missing Models → Download" buttons and routes the download server-side via Manager's queue API, so files land in your workspace volume on the **server**, not in your browser on the **client** machine. Critical for remote-accessed Sparks. |
 | **ComfyUI-PromptRelay** (kijai) | Timeline-based per-second prompt control for video — change descriptions throughout the sequence (used by `10_ltx2.3_prompt_relay`). |
+| **PDF-Tools** (EricRollei) | PDF extraction and processing nodes for document-to-workflow pipelines. |
 
 ### Models auto-downloaded on first start (~285 GB)
 
@@ -441,7 +442,7 @@ This image ships **two** independent paths that both route model downloads to th
    NVIDIA recommends for pre-release silicon.
 3. **CUDA 13.0.2 toolchain** in the build image is the first NVCC release
    that emits sm_121 — CUDA 12.x literally cannot.
-4. **All 16 custom-node `requirements.txt` resolved at build time**, so
+4. **All 17 custom-node `requirements.txt` resolved at build time**, so
    you don't pay the dependency-resolve tax on every container start.
 
 ### Runtime tuning that ships by default
@@ -490,7 +491,7 @@ workspace/                           ← single host-mounted volume
 │   │   └── abliterated/             ← + huihui-ai full HF dirs
 │   ├── vae/  loras/  latent_upscale_models/
 │   └── ... all standard ComfyUI subdirs
-├── custom_nodes/                    ← 16 bundled + anything Manager adds
+├── custom_nodes/                    ← 17 bundled + anything Manager adds
 ├── output/                          ← generated images, videos, audio
 ├── input/                           ← reference inputs
 ├── user/default/workflows/          ← 8 pre-seeded workflows
